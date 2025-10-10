@@ -1,0 +1,53 @@
+# =========================
+# Normalize line endings
+# =========================
+* text=auto eol=lf
+
+# =========================
+# GitHub Linguist settings
+# =========================
+# Ignore common build outputs and dependencies in language stats
+back/vendor/* linguist-vendored
+web/node_modules/* linguist-vendored
+web/dist/* linguist-vendored
+web/.vite/* linguist-vendored
+**/*.min.js linguist-vendored
+**/*.min.css linguist-vendored
+
+# Mark documentation as documentation
+*.md linguist-documentation
+*.txt linguist-documentation
+docs/* linguist-documentation
+
+# =========================
+# Treat frontend as JavaScript/TypeScript
+# =========================
+*.ts linguist-language=TypeScript
+*.tsx linguist-language=TypeScript
+
+# =========================
+# Treat backend as Go
+# =========================
+*.go linguist-language=Go
+
+# =========================
+# Treat config and style files properly
+# =========================
+*.json text
+*.yaml text
+*.yml text
+*.css text
+*.scss text
+*.html text
+*.svg text
+
+# =========================
+# Binary files
+# =========================
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.pdf binary

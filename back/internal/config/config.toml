@@ -1,0 +1,47 @@
+
+
+[mainConfig]
+appName = "gochat"
+host = "127.0.0.1"
+port = 8000
+
+[mysqlConfig]
+host = "127.0.0.1"
+port = 3306
+user = "root"
+password = "123456"
+databaseName = "gochat"
+
+[redisConfig]
+host = "127.0.0.1"
+port = 6379
+password = "123456"
+db = 0
+
+[authCodeConfig]
+accessKeyID = "your accessKeyID in alibaba cloud"
+accessKeySecret = "your accessKeySecret in alibaba cloud"
+signName = "阿里云短信测试"
+templateCode = "SMS_154950909"
+
+[logConfig]
+logPath = "your log path"
+
+[kafkaConfig]
+messageMode = "channel"
+hostPort = "127.0.0.1:9092"
+chatTopic = "chat_message"
+partition = 0
+timeout = 1
+
+[staticSrcConfig]
+staticAvatarPath = "./static/avatars"
+staticFilePath = "./static/files"
+
+[email]
+smtp_host = "smtp.gmail.com"      # 例如163邮箱
+smtp_port = 465                 # SSL端口，一般是465
+username = "lxt52307693@gmail.com" # 你的邮箱
+password = "wikv bssx khit urak"  # 邮箱的授权码（不是登录密码）
+
+

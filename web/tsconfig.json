@@ -1,0 +1,17 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "compilerOptions": {
+    // ...其他配置
+     "types": ["vite/client", "node"] ,
+    //"baseUrl": ".", // 这告诉编译器从项目根目录开始解析路径
+    "paths": {
+      "@/*": ["./src/*"] // 定义别名：@/ 开头的路径，都映射到 src/ 目录下
+    }
+
+    // ...其他配置
+  },
+}

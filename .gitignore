@@ -1,0 +1,81 @@
+# =========================
+# Go Backend
+# =========================
+/back/bin/
+/back/tmp/
+/back/dist/
+/back/.env
+/back/.env.*
+/back/config/config.yaml
+/back/config/*.local.yaml
+
+# Go build outputs
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go vendor (if used)
+vendor/
+
+# IDE / debug files
+*.swp
+*.swo
+*.log
+*.tmp
+
+# Go workspace
+/go.work
+/go.work.sum
+
+# =========================
+# React Frontend (Vite + Tailwind)
+# =========================
+/web/node_modules/
+/web/dist/
+/web/.env
+/web/.env.*
+/web/.DS_Store
+/web/.eslintcache
+/web/.vite
+
+# Editor / IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# Local build / preview outputs
+*.local.js
+*.local.ts
+
+# =========================
+# System & Misc
+# =========================
+.DS_Store
+Thumbs.db
+*.bak
+*.log
+*.tmp
+*.swp
+*.swo
+
+# =========================
+# Test & Generated files
+# =========================
+coverage/
+*.lcov
+__pycache__/
+*.pyc
+
+# =========================
+# Environment & Credentials
+# =========================
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*.cert
+secrets/
