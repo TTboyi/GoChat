@@ -129,8 +129,10 @@ const loadGroupMembers = async () => {
 };
 // 放在 Chat 组件内部，用这个来替换 onMessage 逻辑
 const handleIncomingMessage = React.useCallback((msg: IncomingMessage) => {
-  // ① 先处理系统消息（群解散）
+  console.log("🔥 WS 收到：", msg);
   const anyMsg = msg as any;
+
+
   // ✅ 系统控制消息处理（群解散）
 if ((msg as any).action === "group_dismissed" && (msg as any).groupId) {
 
@@ -155,6 +157,27 @@ if ((msg as any).action === "group_dismissed" && (msg as any).groupId) {
   setActiveId(prev => (prev === gid ? "" : prev));
 
   return; // ✅ 不再走普通聊天逻辑
+}
+
+if (anyMsg.action === "group_join" && anyMsg.groupId) {
+  const gid = String(anyMsg.groupId);
+  console.warn("✅ 有人加入群:", gid);
+
+  // ✅ 更新群成员数量
+  if (anyMsg.member_cnt !== undefined) {
+    setMyGroups(prev =>
+      prev.map(g =>
+        g.uuid === gid ? { ...g, member_cnt: anyMsg.member_cnt } : g
+      )
+    );
+  }
+
+  // ✅ 如果我也在这个群，并且当前打开它，则刷新成员列表
+  if (activeId === gid) {
+    loadGroupMembers?.();
+  }
+
+  return;
 }
 
 

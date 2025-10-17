@@ -74,17 +74,62 @@ func CheckGroupAddMode(c *gin.Context) {
 	})
 }
 
-// EnterGroupDirectly 用户申请加入群聊
+// / EnterGroupDirectly 用户申请加入群聊（当前逻辑：直接加入）
 func EnterGroupDirectly(c *gin.Context) {
 	userId := c.GetString("userId")
 	groupUuid := c.PostForm("groupId")
 	message := c.PostForm("message")
 
-	err := service.EnterGroup(userId, groupUuid, message)
-	if err != nil {
+	if groupUuid == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 groupId"})
+		return
+	}
+	if userId == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未认证用户"})
+		return
+	}
+
+	db := config.GetDB()
+
+	// 1) 读群，拿 “加入之前”的成员，作为广播对象（老成员）
+	var group model.GroupInfo
+	if err := db.Where("uuid = ?", groupUuid).First(&group).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "群不存在"})
+		return
+	}
+	var oldMembers []string
+	_ = json.Unmarshal(group.Members, &oldMembers)
+
+	// 2) 执行加入（你原本已有的业务）
+	if err := service.EnterGroup(userId, groupUuid, message); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// 3) 异步通知老成员：有人加入（不推给新加入者）
+	go func(gid, joinUid string, receivers []string) {
+		payload := map[string]any{
+			"action":  "group_join",
+			"groupId": gid,
+			"userId":  joinUid,
+		}
+		raw, _ := json.Marshal(payload)
+		for _, uid := range receivers {
+			if uid != joinUid {
+				chat.ChatServer.DeliverToUser(uid, raw)
+			}
+		}
+	}(groupUuid, userId, oldMembers)
+
+	// 4) （可选）通知新加入者：自己入群成功，用来做 UX 提示，不需要的话可以删掉
+	// go func(gid, joinUid string) {
+	//     payload := map[string]any{
+	//         "action":  "group_join_ack",
+	//         "groupId": gid,
+	//     }
+	//     raw, _ := json.Marshal(payload)
+	//     chat.ChatServer.DeliverToUser(joinUid, raw)
+	// }(groupUuid, userId)
 
 	c.JSON(http.StatusOK, gin.H{"message": "申请已提交"})
 }
@@ -134,6 +179,13 @@ func QuitGroup(c *gin.Context) {
 			"userId":  req.UserId,
 		}
 		raw, _ := json.Marshal(msg)
+
+		// 推送给群里其他成员
+		for _, uid := range members { // members 就是当前群所有成员
+			if uid != req.UserId {
+				chat.ChatServer.DeliverToUser(uid, raw)
+			}
+		}
 		for _, uid := range newMembers {
 			chat.ChatServer.DeliverToUser(uid, raw)
 		}

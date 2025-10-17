@@ -1,6 +1,7 @@
 package service
 
 import (
+	"chatapp/back/internal/chat"
 	"chatapp/back/internal/config"
 	"chatapp/back/internal/dto/req"
 	"chatapp/back/internal/model"
@@ -118,6 +119,7 @@ func EnterGroup(userId, groupUuid, message string) error {
 			return errors.New("加入群聊失败")
 		}
 
+		// —— ✅ 新增：群聊联系人关系（如果需要）
 		var cnt int64
 		db.Model(&model.UserContact{}).
 			Where("user_id = ? AND contact_id = ? AND contact_type = 1", userId, group.Uuid).
@@ -126,18 +128,36 @@ func EnterGroup(userId, groupUuid, message string) error {
 			uc := model.UserContact{
 				UserId:      userId,
 				ContactId:   group.Uuid,
-				ContactType: 1, // 群
+				ContactType: 1,
 				Status:      0,
 				CreatedAt:   time.Now(),
 			}
-			if err := db.Create(&uc).Error; err != nil {
-				return errors.New("加入群聊成功，但创建联系人失败")
-			}
+			_ = db.Create(&uc).Error
 		}
+
+		// ✅✅✅ 关键：广播入群通知给其他成员
+		go func() {
+			msg := map[string]any{
+				"action":     "group_join",
+				"groupId":    groupUuid,
+				"userId":     userId,
+				"member_cnt": len(members), // ✅ 带人数
+				"members":    members,      // ✅ 带完整成员列表
+			}
+			raw, _ := json.Marshal(msg)
+
+			// 推给所有旧成员
+			for _, uid := range members {
+				if uid != userId {
+					chat.ChatServer.DeliverToUser(uid, raw)
+				}
+			}
+		}()
+
 		return nil
 	}
 
-	// 审核模式 → 插入一条申请记录
+	// ✅ 审核模式下暂时不推，保留原逻辑
 	apply := model.ContactApply{
 		Uuid:        "A" + uuid.NewString()[:7],
 		UserId:      userId,
