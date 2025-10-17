@@ -111,12 +111,29 @@ const [sessionIndex, setSessionIndex] = useState<Record<string, "user" | "group"
 
 
 
+// ===== 加载群成员 =====
+const loadGroupMembers = async () => {
+  if (!active || active.type !== "group") return;
+  try {
+    const res = await api.getGroupMembers(active.id);
+    const members = res.data?.members || res.data?.data || [];
+    setGroupMembers(members);
+    // 判断是否为群主
+    const myId = user?.uuid;
+    const groupInfo = myGroups.find(g => g.uuid === active.id);
+    setIsGroupOwner(groupInfo?.owner_id === myId);
+  } catch (e) {
+    console.error("加载群成员失败:", e);
+    setGroupMembers([]);
+  }
+};
 // 放在 Chat 组件内部，用这个来替换 onMessage 逻辑
 const handleIncomingMessage = React.useCallback((msg: IncomingMessage) => {
   // ① 先处理系统消息（群解散）
-  //const anyMsg = msg as any;
+  const anyMsg = msg as any;
   // ✅ 系统控制消息处理（群解散）
 if ((msg as any).action === "group_dismissed" && (msg as any).groupId) {
+
   const gid = String((msg as any).groupId);
   console.warn("⚠️ 收到群被解散通知:", gid);
 
@@ -139,6 +156,39 @@ if ((msg as any).action === "group_dismissed" && (msg as any).groupId) {
 
   return; // ✅ 不再走普通聊天逻辑
 }
+
+
+  // ✅ 系统消息：有人退出群
+  if (anyMsg.action === "group_quit" && anyMsg.groupId) {
+    const gid = String(anyMsg.groupId);
+    const quitUid = String(anyMsg.userId);
+    console.warn("🚪 收到退群通知:", gid, "退出人:", quitUid);
+
+    if (anyMsg.userId === user?.uuid) {
+      // ✅ 自己退出 → 移除整个群
+      setSessions(prev => prev.filter(s => s.id !== gid));
+      setMyGroups(prev => prev.filter(g => g.uuid !== gid));
+      setMessagesMap(prev => {
+        const next = { ...prev };
+        delete next[gid];
+        saveMessagesToStorage(next);
+        return next;
+      });
+      setActiveId(prev => (prev === gid ? "" : prev));
+    } else {
+    // ✅ 别人退出 → 无论我是不是在这个群界面，都更新群人数
+    setGroupMembers(prev => prev.filter(uid => uid !== quitUid));
+
+    // ✅ 自动更新人数（sessions → 群成员数量）
+    setMyGroups(prev =>
+      prev.map(g =>
+        g.uuid === gid ? { ...g, member_cnt: (g.member_cnt || 1) - 1 } : g
+      )
+    );
+  }
+    return;
+  }
+
 
   // ② 普通聊天消息
   const newMsg: any = {
@@ -171,26 +221,11 @@ if ((msg as any).action === "group_dismissed" && (msg as any).groupId) {
     saveMessagesToStorage(next);
     return next;
   });
-}, [activeId, groupIdSet, sessionIndex, setActiveId, setMessagesMap, setSessions, user?.uuid]);
+}, [activeId, groupIdSet, sessionIndex, setActiveId, setMessagesMap, setSessions, user?.uuid,loadGroupMembers]);
 
 
   
-// ===== 加载群成员 =====
-const loadGroupMembers = async () => {
-  if (!active || active.type !== "group") return;
-  try {
-    const res = await api.getGroupMembers(active.id);
-    const members = res.data?.members || res.data?.data || [];
-    setGroupMembers(members);
-    // 判断是否为群主
-    const myId = user?.uuid;
-    const groupInfo = myGroups.find(g => g.uuid === active.id);
-    setIsGroupOwner(groupInfo?.owner_id === myId);
-  } catch (e) {
-    console.error("加载群成员失败:", e);
-    setGroupMembers([]);
-  }
-};
+
 
   // 上传头像
 const onAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -205,6 +240,7 @@ const onAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
       setAvatarVersion(Date.now());
       alert("头像更新成功！");
     } else {
+      
       alert("上传失败：服务端未返回 url");
     }
   } catch (err) {

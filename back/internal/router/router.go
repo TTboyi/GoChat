@@ -53,7 +53,7 @@ func initGroupRoutes(r *gin.RouterGroup) {
 		group.GET("/loadMyGroup", v1.LoadMyGroup)         // 查询我创建的群聊
 		group.GET("/checkAddMode", v1.CheckGroupAddMode)  // 检查加群方式
 		group.POST("/enter", v1.EnterGroupDirectly)       // 加入群聊（直接/申请）
-		group.POST("/leave", v1.QuitGroup)                // 退出群聊
+		group.POST("/quit", v1.QuitGroup)                 // 退出群聊
 		group.GET("/members", v1.GetGroupMemberList)      // 查询群聊成员列表
 		group.POST("/removeMember", v1.RemoveGroupMember) // 移除群成员
 		group.POST("/dismiss", v1.DismissGroupHandler)    // 解散群聊

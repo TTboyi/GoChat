@@ -214,13 +214,13 @@ func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 		return fmt.Errorf("群聊不存在")
 	}
 
-	// 1) 先为“发送者->该群”确保会话（message.session_id 非空）
+	// 确保会话
 	sessID, _, _, err := ensureSessionForGroup(db, env.SendId, &group)
 	if err != nil {
 		return err
 	}
 
-	// 2) 入库
+	// 入库
 	msgID := newIDWithPrefix("M")
 	now := time.Now()
 	senderName, senderAvatar, _ := loadUserBasic(db, env.SendId)
@@ -230,22 +230,22 @@ func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 		Content:    env.Content,
 		Url:        env.Url,
 		SendId:     env.SendId,
-		SendName:   nz(senderName, "用户"),        // ✅
-		SendAvatar: nz(senderAvatar, "default"), // ✅
-		ReceiveId:  env.ReceiveId,               // 群ID
+		SendName:   nz(senderName, "用户"),
+		SendAvatar: nz(senderAvatar, "default"),
+		ReceiveId:  env.ReceiveId, // 群ID
 		CreatedAt:  now.Unix(),
 	}
 
 	msg := model.Message{
 		Uuid:       msgID,
-		SessionId:  sessID, // 以“发送者->群”的 session 兜底
+		SessionId:  sessID,
 		Type:       env.Type,
 		Content:    env.Content,
 		Url:        env.Url,
 		SendId:     env.SendId,
 		SendName:   nz(senderName, "用户"),
 		SendAvatar: nz(senderAvatar, "default_avatar.png"),
-		ReceiveId:  env.ReceiveId, // 群ID
+		ReceiveId:  env.ReceiveId,
 		FileType:   env.FileType,
 		FileName:   env.FileName,
 		FileSize:   env.FileSize,
@@ -253,11 +253,10 @@ func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 		CreatedAt:  now,
 	}
 	if err := db.Create(&msg).Error; err != nil {
-		return fmt.Errorf("保存群聊消息失败: %w", err)
+		return fmt.Errorf("保存群消息失败: %w", err)
 	}
 
-	// 3) 群广播（仅在线）
-	// ✅ 群广播（推送给当前已订阅该群的在线 WebSocket）
+	// ✅ 使用订阅用户推送（而不是 group.Members）
 	raw, _ := json.Marshal(out)
 	if subs, ok := groupMembers[env.ReceiveId]; ok {
 		for userId := range subs {
@@ -266,7 +265,6 @@ func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 	}
 
 	_ = db.Model(&model.Message{}).Where("uuid = ?", msgID).Update("status", 1).Error
-
 	return nil
 }
 

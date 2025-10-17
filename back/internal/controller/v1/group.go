@@ -89,7 +89,7 @@ func EnterGroupDirectly(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "申请已提交"})
 }
 
-// 退出群聊
+// ✅ 退出群聊（成员自己退出）
 func QuitGroup(c *gin.Context) {
 	var req struct {
 		GroupId string `json:"groupId" binding:"required"`
@@ -107,22 +107,39 @@ func QuitGroup(c *gin.Context) {
 		return
 	}
 
-	// 更新成员列表
+	// 解 JSON
 	var members []string
 	_ = json.Unmarshal(group.Members, &members)
 
-	var newMembers []string
+	// 删除该成员
+	newMembers := make([]string, 0, len(members))
 	for _, id := range members {
 		if id != req.UserId {
 			newMembers = append(newMembers, id)
 		}
 	}
 
+	// 保存
 	membersJSON, _ := json.Marshal(newMembers)
 	db.Model(&group).Updates(map[string]interface{}{
 		"members":    membersJSON,
 		"member_cnt": len(newMembers),
 	})
+
+	// ✅ 广播给其它成员：有人退群
+	go func() {
+		msg := map[string]any{
+			"action":  "group_quit",
+			"groupId": req.GroupId,
+			"userId":  req.UserId,
+		}
+		raw, _ := json.Marshal(msg)
+		for _, uid := range newMembers {
+			chat.ChatServer.DeliverToUser(uid, raw)
+		}
+
+		chat.ChatServer.DeliverToUser(req.UserId, raw)
+	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "已退出群聊"})
 }

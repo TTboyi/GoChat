@@ -52,6 +52,7 @@ func (c *Client) Read() {
 				continue
 			}
 			ChatServer.AddUserToGroup(c.Uuid, req.GroupId)
+			log.Printf("✅ 用户 %s 成功 join_group %s", c.Uuid, req.GroupId) // ← 加这行
 			continue
 
 		default:

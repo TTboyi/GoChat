@@ -138,7 +138,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({ open, onClose, groupId 
           {!isOwner ? (
             <button className="bg-red-500 text-white px-3 py-1 rounded"
               onClick={async () => {
-                await api.leaveGroup({ groupUuid: groupId });
+                await api.quitGroup({ groupId: groupId ,userId: user?.uuid!});
                 alert("已退出群聊");
                 onClose();
               }}>
