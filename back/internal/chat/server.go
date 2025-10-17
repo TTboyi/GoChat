@@ -51,6 +51,9 @@ type Server struct {
 	Logout   chan *Client
 }
 
+// ✅ 记录每个群在线成员
+var groupMembers = make(map[string]map[string]bool) // groupId -> userId -> 在线状态
+
 // 全局唯一
 var ChatServer = &Server{
 	Clients:  make(map[string]*Client),
@@ -58,6 +61,14 @@ var ChatServer = &Server{
 	Transmit: make(chan ChatEnvelope, 1024),
 	Login:    make(chan *Client, 128),
 	Logout:   make(chan *Client, 128),
+}
+
+func (s *Server) AddUserToGroup(userId, groupId string) {
+	if _, ok := groupMembers[groupId]; !ok {
+		groupMembers[groupId] = make(map[string]bool)
+	}
+	groupMembers[groupId][userId] = true
+	log.Printf("✅ 用户 %s 已加入群订阅 %s", userId, groupId)
 }
 
 // Run 启动消息循环
@@ -84,22 +95,13 @@ func (s *Server) Run() {
 			log.Printf("用户 %s 退出\n", client.Uuid)
 			_ = client.Conn.Close()
 
-		// 收到消息
-		case msg := <-s.Transmit:
-			log.Printf("转发消息: %+v\n", msg)
-
-			// 转成 JSON
-			data, _ := json.Marshal(msg)
-
-			// 发给接收方
-			if receiver, ok := s.Clients[msg.ReceiveId]; ok {
-				receiver.SendBack <- data
+			// 收到消息
+		case env := <-s.Transmit:
+			// 统一走路由 + 入库 + 下发（点对点/群聊都在这里处理）
+			if err := s.routeAndPersist(env); err != nil {
+				log.Printf("❌ routeAndPersist 失败: %v", err)
 			}
 
-			// ✅ 回显给自己（发送方也能看到消息）
-			if sender, ok := s.Clients[msg.SendId]; ok {
-				sender.SendBack <- data
-			}
 		}
 	}
 }

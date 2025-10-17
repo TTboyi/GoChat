@@ -275,3 +275,37 @@ func DismissGroup(ownerId, groupUuid string) error {
 
 	return nil
 }
+func GetGroupInfo(groupUuid string) (*model.GroupInfo, error) {
+	db := config.GetDB()
+	var group model.GroupInfo
+	if err := db.Where("uuid = ?", groupUuid).First(&group).Error; err != nil {
+		return nil, errors.New("群聊不存在")
+	}
+	return &group, nil
+}
+
+// 更新公告
+func UpdateGroupNotice(userId, groupUuid, notice string) error {
+	db := config.GetDB()
+	var group model.GroupInfo
+	if err := db.Where("uuid = ?", groupUuid).First(&group).Error; err != nil {
+		return errors.New("群聊不存在")
+	}
+	if group.OwnerId != userId {
+		return errors.New("没有权限修改公告")
+	}
+	return db.Model(&group).Update("notice", notice).Error
+}
+
+// 更新群名
+func UpdateGroupName(userId, groupUuid, newName string) error {
+	db := config.GetDB()
+	var group model.GroupInfo
+	if err := db.Where("uuid = ?", groupUuid).First(&group).Error; err != nil {
+		return errors.New("群聊不存在")
+	}
+	if group.OwnerId != userId {
+		return errors.New("没有权限修改群名称")
+	}
+	return db.Model(&group).Update("name", newName).Error
+}

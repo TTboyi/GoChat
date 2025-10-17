@@ -1,9 +1,12 @@
 package v1
 
 import (
+	"encoding/json"
 	"net/http"
 
+	"chatapp/back/internal/config"
 	"chatapp/back/internal/dto/req"
+	"chatapp/back/internal/model"
 	"chatapp/back/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -78,16 +81,42 @@ func EnterGroupDirectly(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "申请已提交"})
 }
 
-func LeaveGroup(c *gin.Context) {
-	userId := c.GetString("userId")
-	groupUuid := c.PostForm("groupUuid")
-
-	err := service.LeaveGroup(userId, groupUuid)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+// 退出群聊
+func QuitGroup(c *gin.Context) {
+	var req struct {
+		GroupId string `json:"groupId" binding:"required"`
+		UserId  string `json:"userId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "退出成功"})
+
+	db := config.GetDB()
+	var group model.GroupInfo
+	if err := db.First(&group, "uuid = ?", req.GroupId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "群不存在"})
+		return
+	}
+
+	// 更新成员列表
+	var members []string
+	_ = json.Unmarshal(group.Members, &members)
+
+	var newMembers []string
+	for _, id := range members {
+		if id != req.UserId {
+			newMembers = append(newMembers, id)
+		}
+	}
+
+	membersJSON, _ := json.Marshal(newMembers)
+	db.Model(&group).Updates(map[string]interface{}{
+		"members":    membersJSON,
+		"member_cnt": len(newMembers),
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "已退出群聊"})
 }
 
 // 查询群聊成员列表
@@ -131,8 +160,8 @@ func RemoveGroupMember(c *gin.Context) {
 
 // 解散群聊（群主权限）
 func DismissGroup(c *gin.Context) {
-	ownerId := c.GetString("userId") // 当前登录用户
-	groupUuid := c.PostForm("groupUuid")
+	ownerId := c.GetString("ownerId") // 当前登录用户
+	groupUuid := c.PostForm("groupId")
 
 	if groupUuid == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少群组UUID"})
@@ -145,4 +174,64 @@ func DismissGroup(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "群聊已解散"})
+}
+
+// 获取群详情
+func GetGroupInfo(c *gin.Context) {
+	groupId := c.Query("groupId")
+	db := config.GetDB()
+
+	var group model.GroupInfo
+	if err := db.First(&group, "uuid = ?", groupId).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "群不存在"})
+		return
+	}
+
+	// 反序列化成员
+	var members []string
+	_ = json.Unmarshal(group.Members, &members)
+
+	c.JSON(http.StatusOK, gin.H{
+		"uuid":        group.Uuid,
+		"name":        group.Name,
+		"notice":      group.Notice,
+		"ownerId":     group.OwnerId,
+		"memberCount": group.MemberCnt,
+		"avatar":      group.Avatar,
+		"members":     members,
+	})
+}
+
+// 更新群公告
+func UpdateGroupNotice(c *gin.Context) {
+	userId := c.GetString("userId")
+	groupUuid := c.PostForm("groupUuid")
+	notice := c.PostForm("notice")
+
+	if groupUuid == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少参数"})
+		return
+	}
+	if err := service.UpdateGroupNotice(userId, groupUuid, notice); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "群公告已更新"})
+}
+
+// 更新群名称
+func UpdateGroupName(c *gin.Context) {
+	userId := c.GetString("userId")
+	groupUuid := c.PostForm("groupUuid")
+	newName := c.PostForm("name")
+
+	if groupUuid == "" || newName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少参数"})
+		return
+	}
+	if err := service.UpdateGroupName(userId, groupUuid, newName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "群名称已更新"})
 }

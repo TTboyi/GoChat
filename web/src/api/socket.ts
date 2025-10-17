@@ -28,6 +28,8 @@ interface ChatWebSocketProps {
   reconnect?: boolean;
 }
 
+
+
 export class ChatWebSocket {
   private ws: WebSocket | null = null;
   private token: string;
@@ -87,7 +89,7 @@ export class ChatWebSocket {
     }, 3000);
   }
 
-  send(msg: ChatMessage) {
+  send(msg: any) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.warn("WebSocket未连接，消息未发送:", msg);
       return;
@@ -126,3 +128,5 @@ export const sendFileMessage = (
   };
   socket.send(msg);
 };
+
+

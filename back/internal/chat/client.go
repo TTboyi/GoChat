@@ -2,15 +2,9 @@ package chat
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 
 	"github.com/gorilla/websocket"
-
-	"chatapp/back/internal/model"
-	"chatapp/back/internal/service"
-	"chatapp/back/utils"
-	"time"
 )
 
 // Client 表示一个 WebSocket 客户端
@@ -28,6 +22,12 @@ type ChatMessageRequest struct {
 	SendId    string `json:"sendId"`    // 发送方 id
 }
 
+// ===== WebSocket 加入群聊指令 =====
+type JoinGroupRequest struct {
+	Action  string `json:"action"`
+	GroupId string `json:"groupId"`
+}
+
 func (c *Client) Read() {
 	defer func() {
 		ChatServer.RemoveClient(c.Uuid)
@@ -41,28 +41,18 @@ func (c *Client) Read() {
 			break
 		}
 
+		// ✅ 检查是否为 join_group 类型
+		var join JoinGroupRequest
+		if err := json.Unmarshal(msg, &join); err == nil && join.Action == "join_group" {
+			log.Printf("✅ 用户 %s 订阅群 %s 的 WebSocket 消息", c.Uuid, join.GroupId)
+			ChatServer.AddUserToGroup(c.Uuid, join.GroupId)
+			continue
+		}
+
 		var chatMsg ChatMessageRequest
 		if err := json.Unmarshal(msg, &chatMsg); err != nil {
 			log.Println("消息解析失败:", err)
 			continue
-		}
-
-		fmt.Printf("收到消息: %+v\n", chatMsg)
-
-		// ✅ 保存消息到数据库
-		message := &model.Message{
-			Uuid:      utils.GenerateUUID(20), // 生成唯一消息ID
-			SendId:    c.Uuid,                 // 发送者ID（不信任前端）
-			ReceiveId: chatMsg.ReceiveId,
-			Type:      chatMsg.Type,
-			Content:   chatMsg.Content,
-			CreatedAt: time.Now(),
-		}
-
-		if err := service.SaveMessage(message); err != nil {
-			log.Printf("❌ 保存消息失败: %v", err)
-		} else {
-			log.Printf("💾 消息已保存: %+v", message)
 		}
 
 		// ✅ 广播到其他客户端

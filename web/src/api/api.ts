@@ -53,21 +53,21 @@ export default {
   
     // 获取群成员
     getGroupMembers: (groupUuid: string) =>
-      api.get("/group/getGroupMemberList", { params: { groupUuid } }),
+      api.get("/group/members", { params: { groupUuid : groupUuid} }),
   
     // 直接加入群聊
     enterGroup: (data: { groupId: string; message?: string }) => {
       const formData = new FormData();
       formData.append("groupId", data.groupId); // ✅ 对应 EnterGroupDirectly 的 c.PostForm("groupId")
       if (data.message) formData.append("message", data.message);
-      return api.post("/group/enterGroupDirectly", formData);
+      return api.post("/group/enter", formData);
     },
   
     // 退出群聊
     leaveGroup: (data: { groupUuid: string }) => {
       const formData = new FormData();
-      formData.append("groupUuid", data.groupUuid);
-      return api.post("/group/leaveGroup", formData);
+      formData.append("groupId", data.groupUuid);
+      return api.post("/group/leave", formData);
     },
   
     // 移除群成员（群主权限）
@@ -78,16 +78,32 @@ export default {
       return api.post("/group/removeGroupMember", formData);
     },
   
-    // 解散群聊（群主权限）
-    dismissGroup: (data: { groupUuid: string }) => {
-      const formData = new FormData();
-      formData.append("groupUuid", data.groupUuid);
-      return api.post("/group/dismissGroup", formData);
-    },
-  
+    
     // 获取群聊消息列表
     getGroupMessageList: (data: { groupId: string; limit?: number }) =>
       api.post("/message/groupList", data),
+
+
+// 群聊详情与管理
+getGroupInfo: (groupId: string) =>
+  api.get("/group/info", { params: { groupId } }),
+
+updateGroupName: (data: { groupId: string; name: string }) =>
+  api.post("/group/updateName", data),
+
+updateGroupNotice: (data: { groupId: string; notice: string }) =>
+  api.post("/group/updateNotice", data),
+
+quitGroup: (data: { groupId: string; userId: string }) =>
+  api.post("/group/quit", data),
+
+dismissGroup: (data: {  groupId: string }) =>
+  api.post("/group/dismiss", data),
+// ✅ 先占位（后端暂时没写）群信息接口
+
+
+
+
 
   // ================= 联系人 =================
   applyContact: (data: { target: string; message: string }) =>
@@ -139,3 +155,4 @@ handleContactApply: (data: { applyUuid: string; approve: boolean }) =>
   adminDismissGroup: (id: string) => api.delete(`/admin/groups/${id}`),
   getSystemStats: () => api.get("/admin/stats"),
 };
+

@@ -17,6 +17,7 @@ type ContactDetail struct {
 	Uuid     string `json:"uuid"`
 	Nickname string `json:"nickname"`
 	Avatar   string `json:"avatar"`
+	Type     int    `json:"type"`
 }
 
 // 申请添加联系人
@@ -155,7 +156,6 @@ func HandleContactApply(userId string, form *req.HandleContactApplyRequest) erro
 
 	return db.Save(&apply).Error
 }
-
 func GetContactList(userId string) ([]ContactDetail, error) {
 	db := config.GetDB()
 	var contacts []model.UserContact
@@ -165,13 +165,17 @@ func GetContactList(userId string) ([]ContactDetail, error) {
 
 	var list []ContactDetail
 	for _, c := range contacts {
-		var user model.UserInfo
-		if err := db.Where("uuid = ?", c.ContactId).First(&user).Error; err == nil {
-			list = append(list, ContactDetail{
-				Uuid:     user.Uuid,
-				Nickname: user.Nickname,
-				Avatar:   user.Avatar,
-			})
+		if c.ContactType == 0 {
+			// ✅ 用户
+			var user model.UserInfo
+			if err := db.Where("uuid = ?", c.ContactId).First(&user).Error; err == nil {
+				list = append(list, ContactDetail{
+					Uuid:     user.Uuid,
+					Nickname: user.Nickname,
+					Avatar:   user.Avatar,
+					Type:     0,
+				})
+			}
 		}
 	}
 	return list, nil

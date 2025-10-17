@@ -6,6 +6,9 @@ import type { IncomingMessage } from "../api/socket";
 import api from "../api/api";
 import NewFriendModal from "../components/NewFriendModal";
 import { getToken } from "../utils/session";
+import GroupInfoModal from "../components/GroupInfoModal";
+
+
 
 // ====== 类型 ======
 interface SessionItem {
@@ -75,6 +78,8 @@ const [joinGroupId, setJoinGroupId] = useState("");
 const [showGroupMembers, setShowGroupMembers] = useState(false);
 const [groupMembers, setGroupMembers] = useState<string[]>([]);
 const [isGroupOwner, setIsGroupOwner] = useState(false);
+const [groupIdSet, setGroupIdSet] = useState<Set<string>>(new Set());
+
 
 
   // ✅ 改造：按会话保存所有消息
@@ -89,6 +94,11 @@ const [isGroupOwner, setIsGroupOwner] = useState(false);
 
   // 我的群聊列表
   const [myGroups, setMyGroups] = useState<GroupInfo[]>([]);  
+  //const [groupMembers, setGroupMembers] = useState<string[]>([]);
+const [groupNotice, setGroupNotice] = useState<string>("");
+const [showMemberList, setShowMemberList] = useState(false);
+const [showGroupInfo, setShowGroupInfo] = useState(false);
+
 
 
   
@@ -152,12 +162,36 @@ const onSaveProfile = async (e: React.FormEvent) => {
 };
 
 
+useEffect(() => {
+  const active = sessions.find(s => s.id === activeId);
+  if (!active || active.type !== "group") return;
 
+  // 拉成员
+  (async () => {
+    try {
+      const res = await api.getGroupMembers(active.id);
+      const members = res.data?.members || res.data?.data || [];
+      setGroupMembers(members);
+    } catch (e) {
+      console.error("加载群成员失败:", e);
+      setGroupMembers([]);
+    }
+  })();
+
+  // 可选：拉群公告/名称（如果你有 /group/info）
+  if (api.getGroupInfo) {
+    api.getGroupInfo(active.id).then(res => {
+      setGroupNotice(res.data?.notice || "");
+    }).catch(() => {});
+  }
+}, [activeId, sessions]);
   // 初始化加载缓存消息（刷新后恢复）
   useEffect(() => {
     const stored = loadMessagesFromStorage();
     setMessagesMap(stored);
   }, []);
+
+ 
 
   useEffect(() => {
     if (user?.avatar) setAvatarVersion(Date.now());
@@ -185,37 +219,73 @@ const onSaveProfile = async (e: React.FormEvent) => {
   const loadContacts = async () => {
     try {
       const [userRes, groupRes] = await Promise.all([
-        api.getContactList(),
-        api.loadMyJoinedGroup(),
+        api.getContactList(),       // 只返回"人"
+        api.loadMyJoinedGroup(),    // 只返回"群"
       ]);
+  
       const contactList = (userRes.data?.data || userRes.data || []) as any[];
-      const groupList = (groupRes.data?.data || groupRes.data || []) as any[];
+      const groupList   = (groupRes.data?.data || groupRes.data || []) as any[];
+      console.log("✅ 联系人数据 contactList = ", contactList);
+      console.log("✅ 群数据 groupList = ", groupList);
 
+      // 群（信息完整）
+      const groups: SessionItem[] = groupList.map((g) => ({
+        id: g.uuid || g.Uuid, 
+        name: g.name || g.Name || "群聊", 
+        avatar: g.avatar || g.Avatar || "",
+        type: "group",
+      }));
+  
+      // 好友
       const contacts: SessionItem[] = contactList.map((it) => ({
-        id: it.uuid || it.id,
-        name: it.nickname || it.name || "联系人",
+        id: it.uuid,
+        name: it.nickname || "好友",
         avatar: it.avatar,
         type: "user",
       }));
+  
+      // 先群后人
+      const merged = [...groups, ...contacts];
+  
+      // 按 id 严格去重
+      const unique = Array.from(new Map(merged.map(x => [x.id, x])).values());
+      console.log("✅ 合并后的 sessions = ", unique);
 
-      const groups: SessionItem[] = groupList.map((g) => ({
-        id: g.uuid || g.id,
-        name: g.name || "群聊",
-        avatar: g.avatar,
-        type: "group",
-      }));
-
-      const merged = [...contacts, ...groups];
-      // ✅ 去重：相同 id 只留一个
-      const unique = Array.from(new Map(merged.map(c => [c.id, c])).values());
       setSessions(unique);
-
-
-      if (!activeId && merged.length > 0) setActiveId(merged[0].id);
+  
+      // 默认选中
+      if (!activeId && unique.length > 0) {
+        setActiveId(unique[0].id);
+      }
+  
+      // ⚠️ 关键：建立群ID集合，供 onMessage 使用（不要再用 startsWith("G")）
+      setGroupIdSet(new Set(groups.map(g => g.id)));
     } catch (e) {
       console.error("加载联系人或群聊失败：", e);
     }
+    
+
+
   };
+  
+  
+
+  useEffect(() => {
+    if (!active || active.type !== "group") return;
+  
+    // 加载群成员
+    api.getGroupMembers(active.id).then(res => {
+      setGroupMembers(res.data?.members || []);
+    });
+  
+    //加载群公告
+    api.getGroupInfo && api.getGroupInfo(active.id).then(res => {
+      setGroupNotice(res.data?.notice || "");
+    });
+  }, [activeId]);
+  
+
+
 
   useEffect(() => {
     loadContacts();
@@ -296,44 +366,30 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
           type: msg.type ?? 0,
           createdAt: msg.createdAt ?? Math.floor(Date.now() / 1000),
         };
-
-          // ✅ 群聊消息：receiveId 以 "G" 开头
-  if (msg.receiveId?.startsWith("G")) {
-    setMessagesMap((prev) => {
-      const existing = prev[msg.receiveId] || [];
-      const merged = [...existing, newMsg];
-      const unique = Array.from(new Map(merged.map(m => [m.uuid, m])).values());
-      const newMap = { ...prev, [msg.receiveId]: unique };
-      saveMessagesToStorage(newMap);
-      return newMap;
-    });
-
-
-
-
-
-
-
-
-
-
-
-    return;
-  }
-
-
-        // 确定属于哪个会话
+      
+        // ✅ 群聊消息处理
+        if (msg.receiveId?.startsWith("G")) {
+          setMessagesMap((prev) => {
+            const list = prev[msg.receiveId] || [];
+            return {
+              ...prev,
+              [msg.receiveId]: [...list, newMsg], // 根据 receiveId 存消息
+            };
+          });
+          return;
+        }
+      
+        // ✅ 私聊逻辑保持原样
         const targetId = msg.sendId === user?.uuid ? msg.receiveId : msg.sendId;
-
         setMessagesMap((prev) => {
-          const oldList = prev[targetId] || [];
-          if (newMsg.uuid && oldList.some(m => m.uuid === newMsg.uuid)) return prev;
-          const updatedList = [...oldList, newMsg];
-          const newMap = { ...prev, [targetId]: updatedList };
-          saveMessagesToStorage(newMap);
-          return newMap;
+          const list = prev[targetId] || [];
+          return {
+            ...prev,
+            [targetId]: [...list, newMsg],
+          };
         });
-      },
+      }
+      ,
       onOpen: () => console.log("✅ WebSocket 已连接"),
       onClose: () => console.log("❌ WebSocket 已关闭"),
     });
@@ -348,21 +404,9 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
     const text = input.trim();  
     sendTextMessage(ws, input.trim(), activeId);
      // ✅ 自己先插一条（乐观显示）
-  const newMsg: Message = {
-    uuid: `tmp_${Date.now()}`,
-    sendId: user?.uuid || "",
-    receiveId: activeId,
-    content: text,
-    type: 0,
-    createdAt: Math.floor(Date.now() / 1000),
-  };
+  
 
-  setMessagesMap(prev => {
-    const oldList = prev[activeId] || [];
-    const updated = { ...prev, [activeId]: [...oldList, newMsg] };
-    saveMessagesToStorage(updated);
-    return updated;
-  });
+     sendTextMessage(ws, text, activeId); 
     setInput("");
   };
 
@@ -493,23 +537,64 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
 
       {/* 右：聊天区 */}
       <main className="flex-1 flex flex-col bg-[#f5f5f5]">
-        <div className="h-16 bg-[#f0f0f0] border-b border-gray-200 px-5 flex items-center justify-between text-black">
-  <div className="text-base font-semibold">
-    {activeId ? sessions.find((s) => s.id === activeId)?.name : "请选择会话"}
+{/* 顶部标题栏：支持群聊显示更多信息 */}
+<div className="h-16 bg-[#f0f0f0] border-b border-gray-200 px-5 flex items-center justify-between">
+  {active?.type === "group" ? (
+    <div className="flex items-center space-x-3">
+      {/* 群头像 */}
+      {active.avatar ? (
+  <img
+    src={`${toAbs(active.avatar)}?v=${avatarVersion}`}
+    className="w-10 h-10 rounded-md object-cover cursor-pointer"
+    onClick={() => setShowGroupInfo(true)}
+    title="查看群资料"
+  />
+) : (
+  <div
+    className="w-10 h-10 bg-gray-400 rounded-md flex items-center justify-center cursor-pointer"
+    onClick={() => setShowGroupInfo(true)}
+    title="查看群资料"
+  >
+    群
   </div>
+)}
 
+
+      {/* 群聊信息 */}
+      <div className="flex flex-col leading-tight">
+        <div className="text-base font-semibold text-black">{active.name}</div>
+        <div className="text-xs text-gray-600">
+          成员 {groupMembers.length} 人
+        </div>
+        {groupNotice && (
+          <div className="text-xs text-gray-500 truncate max-w-[300px]">
+            公告：{groupNotice}
+          </div>
+        )}
+      </div>
+    </div>
+  ) : (
+    // ===== 私聊显示 =====
+    <div className="text-base font-semibold text-black">
+      {active?.name || "请选择会话"}
+    </div>
+  )}
+
+  {/* 右侧按钮：群详情 */}
   {active?.type === "group" && (
     <button
-      onClick={async () => {
-        await loadGroupMembers();
-        setShowGroupMembers(true);
+      onClick={() => {
+        setShowGroupMembers(true);  
+        loadGroupMembers();
+        
       }}
-      className="px-2 py-1 text-xs rounded bg-gray-300 hover:bg-gray-300 text-grey-200"
+      className="px-3 py-1 text-sm rounded bg-gray-200 hover:bg-gray-300"
     >
       群成员
     </button>
   )}
 </div>
+
 
 
         {/* 消息列表 */}
@@ -948,7 +1033,7 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
             onClick={async () => {
               if (!window.confirm("确定要解散群聊吗？")) return;
               try {
-                await api.dismissGroup({ groupUuid: active?.id! });
+                await api.dismissGroup({ groupId: active?.id! });
                 alert("群聊已解散");
                 setShowGroupMembers(false);
                 await loadContacts();
@@ -970,6 +1055,12 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
 
 
       </main>
+
+      <GroupInfoModal
+  open={showGroupInfo}
+  onClose={() => setShowGroupInfo(false)}
+  groupId={activeId}
+/>
 
       <NewFriendModal
         open={showNewFriend}
