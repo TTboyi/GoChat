@@ -147,8 +147,8 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({ open, onClose, groupId 
           ) : (
             <button className="bg-red-600 text-white px-3 py-1 rounded"
               onClick={async () => {
-                var ownerId = groupInfo.ownerId
-                await api.dismissGroup({ groupId });
+                
+                await api.dismissGroup({groupId: groupId});
                 alert("群已解散");
                 onClose();
               }}>

@@ -25,6 +25,8 @@ interface Message {
   content: string;
   type: number;
   createdAt?: number | string;
+  sendName?: string;
+  sendAvatar?: string;
 }
 
 // 群聊类型定义
@@ -37,6 +39,12 @@ interface GroupInfo {
   member_cnt?: number;
   avatar?: string;
 }
+
+type GroupMember = {
+  uuid: string;
+  nickname?: string;
+  avatar?: string;
+};
 
 // ====== 工具 ======
 const cn = (...a: Array<string | false | undefined>) => a.filter(Boolean).join(" ");
@@ -98,7 +106,72 @@ const [groupIdSet, setGroupIdSet] = useState<Set<string>>(new Set());
 const [groupNotice, setGroupNotice] = useState<string>("");
 const [showMemberList, setShowMemberList] = useState(false);
 const [showGroupInfo, setShowGroupInfo] = useState(false);
+// ====== 主组件里 state ======
+const [sessionIndex, setSessionIndex] = useState<Record<string, "user" | "group">>({});
 
+
+
+// 放在 Chat 组件内部，用这个来替换 onMessage 逻辑
+const handleIncomingMessage = React.useCallback((msg: IncomingMessage) => {
+  // ① 先处理系统消息（群解散）
+  //const anyMsg = msg as any;
+  // ✅ 系统控制消息处理（群解散）
+if ((msg as any).action === "group_dismissed" && (msg as any).groupId) {
+  const gid = String((msg as any).groupId);
+  console.warn("⚠️ 收到群被解散通知:", gid);
+
+  // 1. 从会话中删掉
+  setSessions(prev => prev.filter(s => s.id !== gid));
+
+  // 2. 从我的群中删掉
+  setMyGroups(prev => prev.filter(g => g.uuid !== gid));
+
+  // 3. 删除消息记录
+  setMessagesMap(prev => {
+    const next = { ...prev };
+    delete next[gid];
+    saveMessagesToStorage(next);
+    return next;
+  });
+
+  // 4. 如果正在看这个群，自动切换
+  setActiveId(prev => (prev === gid ? "" : prev));
+
+  return; // ✅ 不再走普通聊天逻辑
+}
+
+  // ② 普通聊天消息
+  const newMsg: any = {
+    uuid: msg.uuid,
+    sendId: msg.sendId,
+    receiveId: msg.receiveId,
+    content: msg.content ?? "",
+    type: msg.type ?? 0,
+    createdAt: msg.createdAt ?? Math.floor(Date.now() / 1000),
+    // 后端带过来的昵称/头像（允许不存在）
+    sendName: (msg as any).sendName,
+    sendAvatar: (msg as any).sendAvatar,
+  };
+
+  // 用会话类型/集合判断是否群消息
+  const isGroupMsg =
+    (msg.receiveId && sessionIndex[msg.receiveId] === "group") ||
+    (msg.receiveId && groupIdSet.has(msg.receiveId));
+
+  // 选对消息桶：群=群ID；私聊=对端ID
+  const bucketId = isGroupMsg
+    ? (msg.receiveId as string)
+    : (msg.sendId === user?.uuid ? (msg.receiveId as string) : (msg.sendId as string));
+
+  // 入桶 + 去重 + 本地持久化
+  setMessagesMap(prev => {
+    const list = prev[bucketId] || [];
+    if (newMsg.uuid && list.some(m => m.uuid === newMsg.uuid)) return prev;
+    const next = { ...prev, [bucketId]: [...list, newMsg] };
+    saveMessagesToStorage(next);
+    return next;
+  });
+}, [activeId, groupIdSet, sessionIndex, setActiveId, setMessagesMap, setSessions, user?.uuid]);
 
 
   
@@ -160,6 +233,13 @@ const onSaveProfile = async (e: React.FormEvent) => {
     alert("更新资料失败");
   }
 };
+
+
+
+useEffect(() => {
+  loadContacts();  // ✅ 不要带 ws 不要带 sessions
+}, []);            // ✅ 只在初始化运行
+
 
 
 useEffect(() => {
@@ -235,6 +315,17 @@ useEffect(() => {
         avatar: g.avatar || g.Avatar || "",
         type: "group",
       }));
+
+      setMyGroups(
+        groupList.map((g) => ({
+          uuid:   g.uuid || g.Uuid,
+          name:   g.name || g.Name || "群聊",
+          avatar: g.avatar || g.Avatar || "",
+          owner_id: g.owner_id || g.OwnerId,
+          notice: g.notice || g.Notice || "",
+          member_cnt: g.member_cnt || g.MemberCnt,
+        }))
+      );
   
       // 好友
       const contacts: SessionItem[] = contactList.map((it) => ({
@@ -246,12 +337,23 @@ useEffect(() => {
   
       // 先群后人
       const merged = [...groups, ...contacts];
-  
+      
       // 按 id 严格去重
       const unique = Array.from(new Map(merged.map(x => [x.id, x])).values());
       console.log("✅ 合并后的 sessions = ", unique);
 
+      
+
       setSessions(unique);
+      // 建索引：id -> type
+const idx: Record<string, "user" | "group"> = {};
+groups.forEach(g => { if (g.id) idx[g.id] = "group"; });
+contacts.forEach(c => { if (c.id) idx[c.id] = "user"; });
+setSessionIndex(idx);
+
+// 也保留你之前的 Set（可要可不要）
+setGroupIdSet(new Set(groups.map(g => g.id)));
+
   
       // 默认选中
       if (!activeId && unique.length > 0) {
@@ -285,11 +387,31 @@ useEffect(() => {
   }, [activeId]);
   
 
+// ✅ 只订阅一次，放在 WebSocket onOpen 里
+useEffect(() => {
+  const token = getToken();
+  if (!token) return;
+
+  const socket = new ChatWebSocket({
+    token,
+
+    onOpen: () => {
+      console.log("✅ WebSocket 已连接，开始订阅群");
+      myGroups.forEach(g => {
+        socket.send({ action: "join_group", groupId: g.uuid });
+      });
+    },
+
+    onMessage: handleIncomingMessage,
+    onClose: () => console.log("❌ WebSocket 已关闭"),
+  });
+
+  setWs(socket);
+  return () => socket.close();
+}, [myGroups]); // ✅ 只依赖 myGroups
 
 
-  useEffect(() => {
-    loadContacts();
-  }, []);
+
 
   // ====== 加载历史消息（每次切换会话） ======
   useEffect(() => {
@@ -320,6 +442,8 @@ const arr: Message[] = raw.map((m: any) => ({
                : m.CreatedAt
                  ? Math.floor(Date.parse(m.CreatedAt) / 1000)
                  : Math.floor(Date.now() / 1000),
+  sendName:   m.sendName   ?? m.SendName   ?? "",
+  sendAvatar: m.sendAvatar ?? m.SendAvatar ?? "",
 }));
 
 setMessagesMap(prev => ({
@@ -351,58 +475,15 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
   }, [activeId, sessions]);
 
   // ====== 建立 WebSocket 连接 ======
-  useEffect(() => {
-    const token = getToken();
-    if (!token) return;
+// ====== 建立 WebSocket 连接 ======
 
-    const socket = new ChatWebSocket({
-      token,
-      onMessage: (msg: IncomingMessage) => {
-        const newMsg: Message = {
-          uuid: msg.uuid,
-          sendId: msg.sendId,
-          receiveId: msg.receiveId,
-          content: msg.content ?? "",
-          type: msg.type ?? 0,
-          createdAt: msg.createdAt ?? Math.floor(Date.now() / 1000),
-        };
-      
-        // ✅ 群聊消息处理
-        if (msg.receiveId?.startsWith("G")) {
-          setMessagesMap((prev) => {
-            const list = prev[msg.receiveId] || [];
-            return {
-              ...prev,
-              [msg.receiveId]: [...list, newMsg], // 根据 receiveId 存消息
-            };
-          });
-          return;
-        }
-      
-        // ✅ 私聊逻辑保持原样
-        const targetId = msg.sendId === user?.uuid ? msg.receiveId : msg.sendId;
-        setMessagesMap((prev) => {
-          const list = prev[targetId] || [];
-          return {
-            ...prev,
-            [targetId]: [...list, newMsg],
-          };
-        });
-      }
-      ,
-      onOpen: () => console.log("✅ WebSocket 已连接"),
-      onClose: () => console.log("❌ WebSocket 已关闭"),
-    });
-
-    setWs(socket);
-    return () => socket.close();
-  }, []);
+  
 
   // ====== 发送文本 ======
   const doSend = () => {
     if (!ws || !input.trim() || !activeId) return;
     const text = input.trim();  
-    sendTextMessage(ws, input.trim(), activeId);
+    //sendTextMessage(ws, input.trim(), activeId);
      // ✅ 自己先插一条（乐观显示）
   
 
@@ -610,25 +691,29 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
     <div key={idx} className="mb-3">
       {/* 群聊消息显示昵称 */}
       {active?.type === "group" && !isSelf && (
-        <div className="text-xs text-gray-400 ml-12 mb-1">
-          {  m.sendId}
-        </div>
-      )}
+  <div className="text-xs text-gray-400 ml-12 mb-1">
+    {m.sendName || m.sendId}
+  </div>
+)}
+
 
       <div className={cn("flex items-end", isSelf ? "justify-end" : "justify-start")}>
-        {!isSelf && (
-          <div className="mr-2">
-            {active?.avatar ? (
-              <img
-                src={`${toAbs(active.avatar)}?v=${avatarVersion}`}
-                alt="avatar"
-                className="w-8 h-8 rounded-md object-cover"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-md bg-gray-300" />
-            )}
-          </div>
-        )}
+      {!isSelf && (
+  <div className="mr-2">
+    {m.sendAvatar ? (
+      <img
+        src={m.sendAvatar.startsWith("http") ? m.sendAvatar : `${toAbs(m.sendAvatar)}?v=${avatarVersion}`}
+        alt={m.sendName || m.sendId}
+        className="w-8 h-8 rounded-md object-cover"
+      />
+    ) : (
+      <div className="w-8 h-8 rounded-md bg-gray-300" />
+    )}
+  </div>
+)}
+
+
+
 
         <div
           className={cn(

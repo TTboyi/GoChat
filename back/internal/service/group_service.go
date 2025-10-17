@@ -250,31 +250,36 @@ func RemoveGroupMember(ownerId, groupUuid, targetUserId string) error {
 	return nil
 }
 
-// 解散群聊（群主操作）
-func DismissGroup(ownerId, groupUuid string) error {
+// 文件：back/internal/service/group.go（或你的 service 包里）
+// 替换：
+
+func DismissGroup(ownerId, groupUuid string) ([]string, error) {
 	db := config.GetDB()
 
 	var group model.GroupInfo
 	if err := db.Where("uuid = ?", groupUuid).First(&group).Error; err != nil {
-		return errors.New("群聊不存在")
+		return nil, errors.New("群聊不存在")
 	}
-
-	// 只有群主能解散
 	if group.OwnerId != ownerId {
-		return errors.New("只有群主才能解散群聊")
+		return nil, errors.New("只有群主才能解散群聊")
 	}
 
-	// 更新状态为解散，清空成员
+	// ✅ 解出成员列表，供 WS 广播使用
+	var members []string
+	_ = json.Unmarshal(group.Members, &members)
+
+	// ✅ 标记解散 & 清空成员
 	group.Status = 2 // 2 = 解散
 	group.Members = []byte("[]")
 	group.MemberCnt = 0
 
 	if err := db.Save(&group).Error; err != nil {
-		return errors.New("解散失败")
+		return nil, errors.New("解散失败")
 	}
 
-	return nil
+	return members, nil
 }
+
 func GetGroupInfo(groupUuid string) (*model.GroupInfo, error) {
 	db := config.GetDB()
 	var group model.GroupInfo

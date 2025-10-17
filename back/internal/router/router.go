@@ -56,7 +56,7 @@ func initGroupRoutes(r *gin.RouterGroup) {
 		group.POST("/leave", v1.QuitGroup)                // 退出群聊
 		group.GET("/members", v1.GetGroupMemberList)      // 查询群聊成员列表
 		group.POST("/removeMember", v1.RemoveGroupMember) // 移除群成员
-		group.POST("/dismiss", v1.DismissGroup)           // 解散群聊
+		group.POST("/dismiss", v1.DismissGroupHandler)    // 解散群聊
 		group.POST("/updateName", v1.UpdateGroupName)
 		group.POST("/updateNotice", v1.UpdateGroupNotice)
 		group.GET("/info", v1.GetGroupInfo)

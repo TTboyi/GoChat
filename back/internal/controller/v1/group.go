@@ -4,13 +4,21 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"chatapp/back/internal/chat"
 	"chatapp/back/internal/config"
 	"chatapp/back/internal/dto/req"
 	"chatapp/back/internal/model"
 	"chatapp/back/internal/service"
 
+	// ✅ 记得加这个
+
 	"github.com/gin-gonic/gin"
 )
+
+// 既兼容 JSON 也兼容表单
+type dismissReq struct {
+	GroupId string `json:"groupId" form:"groupId" binding:"required"`
+}
 
 func CreateGroup(c *gin.Context) {
 	var req req.CreateGroupRequest
@@ -159,19 +167,42 @@ func RemoveGroupMember(c *gin.Context) {
 }
 
 // 解散群聊（群主权限）
-func DismissGroup(c *gin.Context) {
-	ownerId := c.GetString("ownerId") // 当前登录用户
-	groupUuid := c.PostForm("groupId")
-
-	if groupUuid == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少群组UUID"})
+func DismissGroupHandler(c *gin.Context) {
+	var req dismissReq
+	if err := c.ShouldBind(&req); err != nil || req.GroupId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 groupId"})
 		return
 	}
 
-	if err := service.DismissGroup(ownerId, groupUuid); err != nil {
+	// ✅ 从中间件读取用户ID（统一用 userId；兼容老的 ownerId）
+	uid := c.GetString("userId")
+	if uid == "" {
+		uid = c.GetString("ownerId")
+	}
+	if uid == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未认证用户"})
+		return
+	}
+
+	// ✅ service 返回成员列表（在清空前取出）
+	members, err := service.DismissGroup(uid, req.GroupId)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// ✅ 给所有成员推送 “group_dismissed” 控制消息
+	go func(groupId string, uids []string) {
+		payload := map[string]any{
+			"action":   "group_dismissed",
+			"groupId":  groupId,
+			"operator": uid,
+		}
+		raw, _ := json.Marshal(payload)
+		for _, m := range uids {
+			chat.ChatServer.DeliverToUser(m, raw)
+		}
+	}(req.GroupId, members)
 
 	c.JSON(http.StatusOK, gin.H{"message": "群聊已解散"})
 }
