@@ -157,3 +157,44 @@ export const sendFileMessage = (
   };
   socket.send(msg);
 };
+
+
+
+
+// 音视频信令发送
+export const callInvite = (socket: ChatWebSocket, targetUserId: string, callType: "audio" | "video", callId: string) => {
+  socket.send({
+    action: "call_invite",
+    receiveId: targetUserId,
+    callType,
+    callId,
+  });
+};
+
+export const callAnswer = (socket: ChatWebSocket, targetUserId: string, callId: string, accept: boolean, sdp?: any) => {
+  socket.send({
+    action: "call_answer",
+    receiveId: targetUserId,
+    callId,
+    accept,
+    content: sdp ? JSON.stringify(sdp) : "",
+  });
+};
+
+export const callCandidate = (socket: ChatWebSocket, targetUserId: string, callId: string, candidate: any) => {
+  socket.send({
+    action: "call_candidate",
+    receiveId: targetUserId,
+    callId,
+    content: JSON.stringify(candidate),
+  });
+};
+
+export const callEnd = (socket: ChatWebSocket, targetUserId: string, callId: string) => {
+  socket.send({
+    action: "call_end",
+    receiveId: targetUserId,
+    callId,
+  });
+};
+

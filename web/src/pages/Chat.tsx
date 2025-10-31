@@ -7,6 +7,7 @@ import api from "../api/api";
 import NewFriendModal from "../components/NewFriendModal";
 import { getToken } from "../utils/session";
 import GroupInfoModal from "../components/GroupInfoModal";
+import { callInvite, callAnswer, callCandidate, callEnd } from "../api/socket";
 
 
 
@@ -46,6 +47,17 @@ type GroupMember = {
   avatar?: string;
 };
 
+type CallState = {
+  callId: string | null;
+  peerId: string | null;
+  status: "idle" | "ringing" | "in-call";
+  callType: "audio" | "video" | null;
+  isCaller: boolean;
+};
+
+
+
+
 // ====== 工具 ======
 const cn = (...a: Array<string | false | undefined>) => a.filter(Boolean).join(" ");
 const toAbs = (rel?: string) => (rel ? `http://localhost:8000${rel}` : "");
@@ -76,6 +88,16 @@ const Chat: React.FC = () => {
   const [activeId, setActiveId] = useState<string>("");
   const [input, setInput] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+  
+const wsRef = useRef<ChatWebSocket | null>(null);
+
+  const [callState, setCallState] = useState<CallState>({
+  callId: null,
+  peerId: null,
+  status: "idle",
+  callType: null,
+  isCaller: false,
+});
   // 群聊相关状态
 // 群聊相关状态
 const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -106,10 +128,344 @@ const [groupIdSet, setGroupIdSet] = useState<Set<string>>(new Set());
 const [groupNotice, setGroupNotice] = useState<string>("");
 const [showMemberList, setShowMemberList] = useState(false);
 const [showGroupInfo, setShowGroupInfo] = useState(false);
+
+//音视频
+const localVideoRef = useRef<HTMLVideoElement>(null);
+const remoteVideoRef = useRef<HTMLVideoElement>(null);
+const peerRef = useRef<RTCPeerConnection | null>(null);
+const localStreamRef = useRef<MediaStream | null>(null);
+
 // ====== 主组件里 state ======
 const [sessionIndex, setSessionIndex] = useState<Record<string, "user" | "group">>({});
 
 
+const startCall = async (callType: "audio" | "video") => {
+  if (!ws || !active?.id) return;
+  const callId = Date.now().toString();
+
+  setCallState({
+    callId,
+    peerId: active.id,
+    status: "ringing",
+    callType,
+    isCaller: true,
+  });
+
+  // ✅ 检查设备
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const hasMic = devices.some((d) => d.kind === "audioinput");
+    const hasCam = devices.some((d) => d.kind === "videoinput");
+
+    if (callType === "video" && !hasCam) {
+      alert("未检测到摄像头设备，请检查硬件或权限。");
+      return;
+    }
+    if (!hasMic) {
+      alert("未检测到麦克风设备，请检查硬件或权限。");
+      return;
+    }
+  } catch (err) {
+    console.warn("🎥 无法枚举设备:", err);
+  }
+
+  // ✅ 获取媒体流
+  let stream: MediaStream;
+  try {
+    const constraints =
+      callType === "video"
+        ? { video: true, audio: true }
+        : { audio: true };
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
+  } catch (err: any) {
+    console.error("🚫 无法访问麦克风或摄像头:", err);
+    alert("无法访问麦克风或摄像头，请检查浏览器权限。");
+    return;
+  }
+
+  // ✅ 设置本地流
+  localStreamRef.current = stream;
+  if (localVideoRef.current && callType === "video") {
+    localVideoRef.current.srcObject = stream;
+  }
+
+  // ✅ 创建 RTCPeerConnection
+  const pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
+    ],
+  });
+  peerRef.current = pc;
+
+  // ✅ 添加轨道
+  if (callType === "video") {
+    stream.getVideoTracks().forEach((t) => pc.addTrack(t, stream));
+  }
+  stream.getAudioTracks().forEach((t) => pc.addTrack(t, stream));
+
+  // ✅ 监听远端流
+  pc.ontrack = (event) => {
+    const [remoteStream] = event.streams;
+    if (remoteVideoRef.current && callType === "video") {
+      remoteVideoRef.current.srcObject = remoteStream;
+    }
+
+    // 给语音通话也创建 <audio> 播放
+    if (callType === "audio") {
+      const audioEl = document.createElement("audio");
+      audioEl.srcObject = remoteStream;
+      audioEl.autoplay = true;
+      //audioEl.playsInline = true;
+      document.body.appendChild(audioEl);
+      console.log("🔈 收到远端音频流");
+    }
+  };
+
+  // ✅ 监听 ICE
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      callCandidate(ws, active.id, callId, event.candidate);
+    }
+  };
+
+  // ✅ 创建 Offer
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  // ✅ 发送 call_invite 携带 offer
+  ws.send({
+    action: "call_invite",
+    receiveId: active.id,
+    callType,
+    callId,
+    content: JSON.stringify(offer),
+  });
+
+  alert(`📞 正在呼叫 ${active.name}（${callType === "video" ? "视频" : "语音"}通话）`);
+};
+
+
+
+const handleCallSignal = async (msg: any) => {
+  console.log("📨 收到信令:", msg);
+
+  const { action, from, callType, callId, accept, content } = msg;
+  const pc = peerRef.current;
+  const socket = wsRef.current;
+  const me = user?.uuid; // 当前登录用户的uuid
+
+  switch (action) {
+    // 对方呼叫我（我=被叫）
+    case "call_invite": {
+      // 如果我自己就是发起方，不要弹我自己
+      if (from === me) return;
+
+      // 只有空闲状态才接受新呼叫
+      if (callState.status !== "idle") {
+        // 我在忙，直接拒绝
+        socket?.send({
+          action: "call_answer",
+          receiveId: from,
+          callId,
+          accept: false,
+        });
+        return;
+      }
+
+      const ok = window.confirm(
+        `📞 ${from} 发起${callType === "video" ? "视频" : "语音"}通话，是否接听？`
+      );
+
+      if (!ok) {
+        socket?.send({
+          action: "call_answer",
+          receiveId: from,
+          callId,
+          accept: false,
+        });
+        return;
+      }
+
+      // 更新通话状态（我现在是 in-call 了）
+      setCallState({
+        callId,
+        peerId: from,
+        status: "in-call",
+        callType,
+        isCaller: false,
+      });
+
+      // 准备本地媒体流
+      const constraints =
+        callType === "video" ? { video: true, audio: true } : { audio: true };
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      localStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+
+      // 创建 PeerConnection（被叫）
+      const pc2 = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+      peerRef.current = pc2;
+
+      // 把本地轨道塞进 PeerConnection
+      stream.getTracks().forEach((t) => pc2.addTrack(t, stream));
+
+      // 收到远端流时，绑定到 remoteVideo
+      pc2.ontrack = (event) => {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
+      };
+
+      // ICE candidate 发送回主叫
+      pc2.onicecandidate = (event) => {
+        if (event.candidate) {
+          socket?.send({
+            action: "call_candidate",
+            receiveId: from,
+            callId,
+            content: JSON.stringify(event.candidate),
+          });
+        }
+      };
+
+      // 处理对方的 offer
+      if (!content) {
+        console.warn("⚠️ call_invite 没带 offer content");
+        return;
+      }
+      const remoteOffer = JSON.parse(content);
+      await pc2.setRemoteDescription(
+        new RTCSessionDescription(remoteOffer)
+      );
+
+      // 生成 answer 并发送
+      const answer = await pc2.createAnswer();
+      await pc2.setLocalDescription(answer);
+
+      socket?.send({
+        action: "call_answer",
+        receiveId: from,
+        callId,
+        accept: true,
+        content: JSON.stringify(answer),
+      });
+
+      break;
+    }
+
+    // 我是主叫，这里接到对方的接听结果
+    case "call_answer": {
+      // 只有主叫才需要处理对方的 answer
+      // 如果 from 是我自己（被后端回显给自己/或者以后误回显），直接略过
+      if (from === me) return;
+
+      if (accept === false) {
+        alert("🚫 对方拒绝通话");
+        cleanupCall();
+        return;
+      }
+
+      // 对方同意了
+      // 让 UI 进入 in-call，如果还没
+      setCallState((prev) =>
+        prev.status === "in-call"
+          ? prev
+          : {
+              ...prev,
+              callId,
+              peerId: from,
+              status: "in-call",
+            }
+      );
+
+      if (!pc) {
+        console.warn("⚠️ call_answer 收到时本地 peerRef 还不存在");
+        return;
+      }
+
+      if (content) {
+        const remoteAnswer = JSON.parse(content); // {type:"answer", sdp:"..."}
+        // 只在需要时设置 remoteDescription，避免 stable->stable 再set报错
+        if (pc.signalingState !== "stable") {
+          await pc.setRemoteDescription(
+            new RTCSessionDescription(remoteAnswer)
+          );
+        } else {
+          console.log("ℹ️ 已经stable，跳过重复 setRemoteDescription");
+        }
+      }
+
+      break;
+    }
+
+    // 双方都会收到对方的 ICE 候选
+    case "call_candidate": {
+      // 如果 from 是我自己（后端又回了我自己的candidate，或者以后双发），跳过
+      if (from === me) return;
+
+      if (!pc) {
+        console.warn("⚠️ 收到 candidate 但本地还没有 peerRef");
+        return;
+      }
+      if (!content) return;
+
+      const ice = JSON.parse(content);
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(ice));
+      } catch (err) {
+        console.error("❌ addIceCandidate 失败", err);
+      }
+      break;
+    }
+
+    case "call_end": {
+      alert("📴 通话结束");
+      cleanupCall();
+      break;
+    }
+  }
+};
+
+
+const endCall = () => {
+  if (ws && callState.peerId && callState.callId) {
+    callEnd(ws, callState.peerId, callState.callId);
+  }
+  cleanupCall();
+};
+
+const cleanupCall = () => {
+  setCallState({
+    callId: null,
+    peerId: null,
+    status: "idle",
+    callType: null,
+    isCaller: false,
+  });
+
+  if (peerRef.current) {
+    peerRef.current.close();
+    peerRef.current = null;
+  }
+
+  if (localStreamRef.current) {
+    localStreamRef.current.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
+  }
+
+  if (localVideoRef.current) {
+    localVideoRef.current.srcObject = null;
+  }
+
+  if (remoteVideoRef.current) {
+    remoteVideoRef.current.srcObject = null;
+  }
+};
 
 // ===== 加载群成员 =====
 const loadGroupMembers = async () => {
@@ -129,7 +485,16 @@ const loadGroupMembers = async () => {
 };
 // 放在 Chat 组件内部，用这个来替换 onMessage 逻辑
 const handleIncomingMessage = React.useCallback((msg: IncomingMessage) => {
+  if (
+  ["call_invite", "call_answer", "call_candidate", "call_end"].includes((msg as any).action)
+) {
+  handleCallSignal(msg);
+  return;
+}
+
   console.log("🔥 WS 收到：", msg);
+  
+
   const anyMsg = msg as any;
 
 
@@ -299,6 +664,10 @@ useEffect(() => {
   loadContacts();  // ✅ 不要带 ws 不要带 sessions
 }, []);            // ✅ 只在初始化运行
 
+useEffect(() => {
+  (window as any).peerRef = peerRef;
+  (window as any).localStreamRef = localStreamRef;
+}, []);
 
 
 useEffect(() => {
@@ -466,6 +835,7 @@ useEffect(() => {
   });
 
   setWs(socket);
+   wsRef.current = socket; 
   return () => socket.close();
 }, [myGroups]); // ✅ 只依赖 myGroups
 
@@ -733,6 +1103,22 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
       群成员
     </button>
   )}
+    {active?.type === "user" && (
+  <div className="flex space-x-2">
+    <button
+      onClick={() => startCall("audio")}
+      className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
+    >
+      语音
+    </button>
+    <button
+      onClick={() => startCall("video")}
+      className="px-3 py-1 bg-gray-200 hover:bg-gray-300 rounded text-sm"
+    >
+      视频
+    </button>
+  </div>
+)}
 </div>
 
 
@@ -843,6 +1229,29 @@ saveMessagesToStorage({ ...messagesMap, [active.id]: arr });
               发送
             </button>
           </div>
+          {/* ======== 音视频通话窗口 ======== */}
+{callState.status === "in-call" && (
+  <div className="fixed bottom-5 right-5 bg-gray-800 text-white rounded-lg shadow-lg p-4 z-50">
+    <div className="flex flex-col items-center space-y-2">
+      {callState.callType === "video" ? (
+        <div className="flex space-x-2">
+          <video ref={localVideoRef} autoPlay playsInline muted className="w-40 h-32 bg-black rounded-md" />
+          <video ref={remoteVideoRef} autoPlay playsInline className="w-40 h-32 bg-black rounded-md" />
+        </div>
+      ) : (
+        <p className="text-sm text-gray-200">🎧 正在语音通话中...</p>
+      )}
+
+      <button
+        onClick={endCall}
+        className="mt-2 px-4 py-1 bg-red-500 hover:bg-red-600 rounded"
+      >
+        挂断
+      </button>
+    </div>
+  </div>
+)}
+
         </div>
         {showAddFriend && (
   <div

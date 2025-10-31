@@ -42,6 +42,17 @@ type OutgoingMessage struct {
 	CreatedAt  int64  `json:"createdAt"` // Unix 秒
 }
 
+type CallSignal struct {
+	Action    string `json:"action"`   // call_invite / call_answer / call_candidate / call_end
+	CallId    string `json:"callId"`   // 通话唯一ID
+	From      string `json:"from"`     // 主叫
+	To        string `json:"to"`       // 被叫
+	CallType  string `json:"callType"` // audio / video
+	Accept    *bool  `json:"accept,omitempty"`
+	Content   string `json:"content,omitempty"` // SDP / ICE
+	CreatedAt int64  `json:"createdAt"`
+}
+
 // ======================================================
 
 // Server 聊天主机
@@ -117,6 +128,29 @@ func (s *Server) Run() {
 		}
 
 	}
+}
+
+// 音视频通话
+// 新增方法
+func (s *Server) ForwardCallSignal(from string, req ChatMessageRequest) {
+	sig := CallSignal{
+		Action:    req.Action,
+		CallId:    req.CallId,
+		From:      from,
+		To:        req.ReceiveId,
+		CallType:  req.CallType,
+		Accept:    req.Accept,
+		Content:   req.Content,
+		CreatedAt: time.Now().Unix(),
+	}
+
+	raw, _ := json.Marshal(sig)
+	log.Printf("📡 ForwardCallSignal from=%s to=%s action=%s", from, req.ReceiveId, req.Action)
+
+	// 发给对方
+	s.DeliverToUser(req.ReceiveId, raw)
+	// 也回传给自己（确认状态）
+	//s.DeliverToUser(from, raw)
 }
 
 // ============== 核心：路由 & 存库 ==============
@@ -273,6 +307,7 @@ func (s *Server) deliverToUser(userId string, raw []byte) {
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()
 	if c, ok := s.Clients[userId]; ok {
+		log.Printf("🚀 DeliverToUser success -> %s", userId)
 		select {
 		case c.SendBack <- raw:
 		default:
