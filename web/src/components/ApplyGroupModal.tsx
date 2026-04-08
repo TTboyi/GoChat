@@ -2,6 +2,7 @@ import React from "react";
 import Modal from "./Modal";
 import { useForm } from "react-hook-form";
 import axios from "axios";
+import { API_BASE } from "../config";
 
 interface ApplyGroupModalProps {
   isOpen: boolean;
@@ -24,13 +25,13 @@ const ApplyGroupModal: React.FC<ApplyGroupModalProps> = ({
   const onSubmit = async (data: FormData) => {
     try {
       // 第一步：先查入群方式
-      const checkRes = await axios.post("http://localhost:8000/group/checkGroupAddMode", {
+      const checkRes = await axios.post(`${API_BASE}/group/checkGroupAddMode`, {
         uuid: data.contactId,
       });
 
       if (checkRes.data.add_mode === 0) {
         // 直接加入
-        const res = await axios.post("http://localhost:8000/group/enterGroupDirectly", {
+        const res = await axios.post(`${API_BASE}/group/enterGroupDirectly`, {
           groupUuid: data.contactId,
           message: data.message,
         });
@@ -40,7 +41,7 @@ const ApplyGroupModal: React.FC<ApplyGroupModalProps> = ({
       }
 
       // 第二步：需要审核 → 走申请接口
-      const res2 = await axios.post("http://localhost:8000/contact/applyContact", {
+      const res2 = await axios.post(`${API_BASE}/contact/applyContact`, {
         contact_id: data.contactId,
         owner_id: userId,
         message: data.message,

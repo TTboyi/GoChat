@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Modal from "./Modal";
 import axios from "axios";
+import { API_BASE } from "../config";
 
 interface Member {
   userId: string;
@@ -27,7 +28,7 @@ const RemoveGroupMembersModal: React.FC<RemoveGroupMembersModalProps> = ({
   // 加载群成员
   const loadMembers = async () => {
     try {
-      const res = await axios.get("http://localhost:8000/group/getGroupMemberList", {
+      const res = await axios.get(`${API_BASE}/group/getGroupMemberList`, {
         params: { groupUuid: groupId },
       });
       if (res.data.members) {
@@ -57,7 +58,7 @@ const RemoveGroupMembersModal: React.FC<RemoveGroupMembersModalProps> = ({
     try {
       for (const uid of selectedIds) {
         await axios.post(
-          "http://localhost:8000/group/removeGroupMember",
+          `${API_BASE}/group/removeGroupMember`,
           new URLSearchParams({
             groupUuid: groupId,
             targetUserId: uid,

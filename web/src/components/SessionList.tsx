@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { API_BASE } from "../config";
 
 interface UserSession {
   user_id: string;
@@ -24,7 +25,7 @@ const SessionList: React.FC<SessionListProps> = ({ userId, onSelect }) => {
 
   const loadUserSessions = async () => {
     try {
-      const res = await axios.post("http://localhost:8000/session/getUserSessionList", {
+      const res = await axios.post(`${API_BASE}/session/getUserSessionList`, {
         owner_id: userId,
       });
       if (res.data.data) {
@@ -32,7 +33,7 @@ const SessionList: React.FC<SessionListProps> = ({ userId, onSelect }) => {
           ...u,
           avatar: u.avatar.startsWith("http")
             ? u.avatar
-            : "http://localhost:8000" + u.avatar,
+            : API_BASE + u.avatar,
         }));
         setUserSessions(list);
       }
@@ -43,7 +44,7 @@ const SessionList: React.FC<SessionListProps> = ({ userId, onSelect }) => {
 
   const loadGroupSessions = async () => {
     try {
-      const res = await axios.post("http://localhost:8000/session/getGroupSessionList", {
+      const res = await axios.post(`${API_BASE}/session/getGroupSessionList`, {
         owner_id: userId,
       });
       if (res.data.data) {
@@ -51,7 +52,7 @@ const SessionList: React.FC<SessionListProps> = ({ userId, onSelect }) => {
           ...g,
           avatar: g.avatar.startsWith("http")
             ? g.avatar
-            : "http://localhost:8000" + g.avatar,
+            : API_BASE + g.avatar,
         }));
         setGroupSessions(list);
       }

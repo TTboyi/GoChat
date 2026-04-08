@@ -67,10 +67,10 @@ func CreateGroup(req *req.CreateGroupRequest) (string, error) {
 	}
 
 	if err := db.Create(&contact).Error; err != nil {
-		return "联系人添加失败", err
+		return "", err
 	}
 
-	return "创建成功", nil
+	return uuid6, nil
 }
 
 func GetMyCreatedGroups(ownerId string) ([]model.GroupInfo, error) {
@@ -333,4 +333,17 @@ func UpdateGroupName(userId, groupUuid, newName string) error {
 		return errors.New("没有权限修改群名称")
 	}
 	return db.Model(&group).Update("name", newName).Error
+}
+
+// UpdateGroupAvatar 更新群头像（群主权限）
+func UpdateGroupAvatar(userId, groupUuid, avatar string) error {
+	db := config.GetDB()
+	var group model.GroupInfo
+	if err := db.Where("uuid = ?", groupUuid).First(&group).Error; err != nil {
+		return errors.New("群聊不存在")
+	}
+	if group.OwnerId != userId {
+		return errors.New("没有权限修改群头像")
+	}
+	return db.Model(&group).Update("avatar", avatar).Error
 }

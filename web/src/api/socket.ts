@@ -1,6 +1,7 @@
 // ✅ socket.ts – 自动群订阅 + 重连恢复 + 实时群消息
 
 import { getToken } from "../utils/session";
+import { WS_BASE } from "../config";
 
 export interface ChatMessage {
   type: number;
@@ -57,7 +58,7 @@ export class ChatWebSocket {
 
   private connect() {
     const tk = getToken() || this.token;
-    const wsUrl = `ws://localhost:8000/wss?token=${tk}`;
+    const wsUrl = `${WS_BASE}/wss?token=${tk}`;
     this.ws = new WebSocket(wsUrl);
 
     this.ws.onopen = () => {

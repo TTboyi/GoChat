@@ -9,7 +9,7 @@ import (
 	"chatapp/back/internal/router"
 	"chatapp/back/utils"
 	//"chatapp/back/internal/middleware" // 替换成你项目中间件的真实路径
-    //"github.com/gin-gonic/gin"
+	//"github.com/gin-gonic/gin"
 )
 
 func main() {
@@ -33,12 +33,40 @@ func main() {
 		cfg.RedisConfig.Db,
 	)
 
+	//启动kafka
+	err := chat.InitKafkaProducer(
+		[]string{"127.0.0.1:9092"},
+		"chat.message",
+	)
+
+	chat.StartDispatcherConsumer(
+		[]string{"127.0.0.1:9092"},
+		"chat-dispatcher-debug-1",
+		"chat.message",
+	)
+
+	if err != nil {
+		log.Fatalf("Kafka init failed: %v", err)
+	}
+	chat.StartPersistConsumer(
+		[]string{"127.0.0.1:9092"},
+		"chat-persist-debug-1",
+		"chat.message",
+	)
+
+	chat.StartCacheConsumer(
+		[]string{"127.0.0.1:9092"},
+		"chat-cache-debug-1",
+		"chat.message",
+	)
+
 	// 3) 先启动 WebSocket Hub（用 goroutine，因为它是个死循环）
-	go chat.ChatServer.Run()
+	// go chat.ChatServer.Run()
 
 	// 4) 再启动 HTTP（阻塞）
 	r := router.InitRouter() // 内部用 utils.GetJWT() 取全局 jwt
 	if err := r.Run(":8000"); err != nil {
 		log.Fatal("HTTP 启动失败: ", err)
 	}
+
 }

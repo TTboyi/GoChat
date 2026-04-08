@@ -15,9 +15,16 @@ const CaptchaLogin: React.FC = () => {
     console.log("验证码登录信息：", data);
   };
 
+
+  //用验证码登陆这里忘记用api了后面再说。。。
+
+
+
+
+
   const sendCode = () => {
     if (countdown > 0) return; // 倒计时期间禁止点击
-    console.log("发送验证码到手机号");
+    console.log("发送验证码到邮箱");
     setCountdown(60);
     const timer = setInterval(() => {
       setCountdown(prev => {

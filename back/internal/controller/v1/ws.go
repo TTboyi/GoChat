@@ -45,6 +45,8 @@ func WsLogin(c *gin.Context) {
 	}
 
 	userId := claims.UserID
+	log.Printf("🟢 WS LOGIN key=%q", userId)
+
 	if userId == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "token 中缺少用户ID"})
 		return
@@ -63,7 +65,8 @@ func WsLogin(c *gin.Context) {
 		Uuid:     userId,
 		SendBack: make(chan []byte, 100),
 	}
-	chat.ChatServer.Login <- client
+	// chat.ChatServer.Login <- client
+	chat.ChatServer.AddClient(client)
 
 	// 5️⃣ 启动读写协程
 	go client.Read()

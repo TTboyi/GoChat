@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
+import { API_BASE } from "../config";
 
 interface Message {
   id: string;
@@ -23,12 +24,12 @@ const MessageList: React.FC<MessageListProps> = ({ userId, contactId }) => {
     try {
       let res;
       if (contactId.startsWith("U")) {
-        res = await axios.post("http://localhost:8000/message/getMessageList", {
+        res = await axios.post(`${API_BASE}/message/getMessageList`, {
           user_one_id: userId,
           user_two_id: contactId,
         });
       } else {
-        res = await axios.post("http://localhost:8000/message/getGroupMessageList", {
+        res = await axios.post(`${API_BASE}/message/getGroupMessageList`, {
           group_id: contactId,
         });
       }
@@ -38,7 +39,7 @@ const MessageList: React.FC<MessageListProps> = ({ userId, contactId }) => {
           ...msg,
           send_avatar: msg.send_avatar.startsWith("http")
             ? msg.send_avatar
-            : "http://localhost:8000" + msg.send_avatar,
+            : API_BASE + msg.send_avatar,
         }));
         setMessages(list);
       }

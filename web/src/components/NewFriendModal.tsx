@@ -1,6 +1,7 @@
 // src/components/NewFriendModal.tsx
 import React, { useEffect, useState } from "react";
 import api from "../api/api";
+import { API_BASE } from "../config";
 
 interface Props {
   open: boolean;
@@ -25,8 +26,7 @@ interface Props {
 // 统一把相对路径转成绝对路径，并可选加上防缓存参数
 const toAbs = (rel?: string, bust = false) => {
   if (!rel) return "";
-  const base = "http://localhost:8000";
-  const url = rel.startsWith("http") ? rel : `${base}${rel}`;
+  const url = rel.startsWith("http") ? rel : `${API_BASE}${rel}`;
   return bust ? `${url}${url.includes("?") ? "&" : "?"}v=${Date.now()}` : url;
 };
 

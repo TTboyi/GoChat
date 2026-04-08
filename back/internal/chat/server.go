@@ -19,27 +19,32 @@ import (
 
 // 前端发来的消息（点对点 & 群聊通用）
 type ChatEnvelope struct {
-	Type      int8   `json:"type"`              // 0=文本, 1=文件, 2=通话（可扩展）
-	Content   string `json:"content,omitempty"` // 文本内容
-	Url       string `json:"url,omitempty"`     // 文件/图片等的 URL
+	Type      int8   `json:"type"`
+	Content   string `json:"content,omitempty"`
+	Url       string `json:"url,omitempty"`
 	FileName  string `json:"fileName,omitempty"`
 	FileType  string `json:"fileType,omitempty"`
 	FileSize  string `json:"fileSize,omitempty"`
-	SendId    string `json:"sendId"`    // 发送者 UUID（若前端不传，后端用连接的 client.Uuid 兜底）
-	ReceiveId string `json:"receiveId"` // 接收方 UUID（用户或群）
+	SendId    string `json:"sendId"`
+	ReceiveId string `json:"receiveId"`
+	LocalId   string `json:"localId,omitempty"` // 前端生成，用于乐观更新
 }
 
 // 推送给前端的消息
 type OutgoingMessage struct {
-	Uuid       string `json:"uuid"` // 消息ID
+	Uuid       string `json:"uuid"`
+	LocalId    string `json:"localId,omitempty"`
 	Type       int8   `json:"type"`
 	Content    string `json:"content,omitempty"`
 	Url        string `json:"url,omitempty"`
+	FileName   string `json:"fileName,omitempty"`
+	FileType   string `json:"fileType,omitempty"`
+	FileSize   string `json:"fileSize,omitempty"`
 	SendId     string `json:"sendId"`
-	SendName   string `json:"sendName"`   // ✅ 新增
-	SendAvatar string `json:"sendAvatar"` // ✅ 新增
+	SendName   string `json:"sendName"`
+	SendAvatar string `json:"sendAvatar"`
 	ReceiveId  string `json:"receiveId"`
-	CreatedAt  int64  `json:"createdAt"` // Unix 秒
+	CreatedAt  int64  `json:"createdAt"`
 }
 
 type CallSignal struct {
@@ -196,14 +201,18 @@ func (s *Server) handleDirect(db *gorm.DB, env ChatEnvelope) error {
 	// 2) 构建 & 入库
 	msgID := newIDWithPrefix("M")
 	now := time.Now()
+	displayName := nz(senderName, "用户")
 	out := OutgoingMessage{
 		Uuid:       msgID,
 		Type:       env.Type,
 		Content:    env.Content,
 		Url:        env.Url,
+		FileName:   env.FileName,
+		FileType:   env.FileType,
+		FileSize:   env.FileSize,
 		SendId:     env.SendId,
-		SendName:   nz(senderName, "用户"),        // ✅
-		SendAvatar: nz(senderAvatar, "default"), // ✅
+		SendName:   displayName,
+		SendAvatar: senderAvatar,
 		ReceiveId:  env.ReceiveId,
 		CreatedAt:  now.Unix(),
 	}
@@ -215,8 +224,8 @@ func (s *Server) handleDirect(db *gorm.DB, env ChatEnvelope) error {
 		Content:    env.Content,
 		Url:        env.Url,
 		SendId:     env.SendId,
-		SendName:   nz(senderName, "用户"),
-		SendAvatar: nz(senderAvatar, "default_avatar.png"),
+		SendName:   displayName,
+		SendAvatar: senderAvatar,
 		ReceiveId:  env.ReceiveId,
 		FileType:   env.FileType,
 		FileName:   env.FileName,
@@ -258,14 +267,18 @@ func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 	msgID := newIDWithPrefix("M")
 	now := time.Now()
 	senderName, senderAvatar, _ := loadUserBasic(db, env.SendId)
+	displayNameG := nz(senderName, "用户")
 	out := OutgoingMessage{
 		Uuid:       msgID,
 		Type:       env.Type,
 		Content:    env.Content,
 		Url:        env.Url,
+		FileName:   env.FileName,
+		FileType:   env.FileType,
+		FileSize:   env.FileSize,
 		SendId:     env.SendId,
-		SendName:   nz(senderName, "用户"),
-		SendAvatar: nz(senderAvatar, "default"),
+		SendName:   displayNameG,
+		SendAvatar: senderAvatar,
 		ReceiveId:  env.ReceiveId, // 群ID
 		CreatedAt:  now.Unix(),
 	}
@@ -277,8 +290,8 @@ func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 		Content:    env.Content,
 		Url:        env.Url,
 		SendId:     env.SendId,
-		SendName:   nz(senderName, "用户"),
-		SendAvatar: nz(senderAvatar, "default_avatar.png"),
+		SendName:   displayNameG,
+		SendAvatar: senderAvatar,
 		ReceiveId:  env.ReceiveId,
 		FileType:   env.FileType,
 		FileName:   env.FileName,
@@ -407,10 +420,50 @@ func nz(s, def string) string {
 // ✅ 新增：添加客户端
 func (s *Server) AddClient(c *Client) {
 	s.Mutex.Lock()
-	defer s.Mutex.Unlock()
+
+	// 收集当前在线用户ID（在新用户加入前）
+	existingIds := make([]string, 0, len(s.Clients))
+	for uid := range s.Clients {
+		existingIds = append(existingIds, uid)
+	}
+
 	s.Clients[c.Uuid] = c
-	log.Printf("✅ 用户 %s 登录", c.Uuid)
-	c.SendBack <- []byte(fmt.Sprintf("欢迎用户 %s 加入聊天室", c.Uuid))
+	log.Printf("✅ 用户 %s 登录，当前在线 %d 人", c.Uuid, len(s.Clients))
+
+	// 发送在线用户列表给新客户端
+	onlineMsg, _ := json.Marshal(map[string]interface{}{
+		"action":  "online_users",
+		"userIds": existingIds,
+	})
+	select {
+	case c.SendBack <- onlineMsg:
+	default:
+	}
+
+	// 广播 user_online 给所有其他客户端
+	onlineNotify, _ := json.Marshal(map[string]interface{}{
+		"action": "user_online",
+		"userId": c.Uuid,
+	})
+	for uid, client := range s.Clients {
+		if uid == c.Uuid {
+			continue
+		}
+		select {
+		case client.SendBack <- onlineNotify:
+		default:
+		}
+	}
+
+	s.Mutex.Unlock()
+}
+
+func keysOfClients(m map[string]*Client) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // // ✅ 新增：移除客户端
@@ -440,7 +493,6 @@ func (s *Server) removeUserFromAllGroups(userId string) {
 // 在 RemoveClient 里调用
 func (s *Server) RemoveClient(userId string) {
 	s.Mutex.Lock()
-	defer s.Mutex.Unlock()
 
 	if c, ok := s.Clients[userId]; ok {
 		_ = c.Conn.Close()
@@ -448,12 +500,33 @@ func (s *Server) RemoveClient(userId string) {
 		log.Printf("❎ 用户 %s 退出", userId)
 	}
 	s.removeUserFromAllGroups(userId) // ✅ 清理订阅，防止脏数据
+
+	// 广播 user_offline 给所有剩余客户端
+	offlineNotify, _ := json.Marshal(map[string]interface{}{
+		"action": "user_offline",
+		"userId": userId,
+	})
+	for _, client := range s.Clients {
+		select {
+		case client.SendBack <- offlineNotify:
+		default:
+		}
+	}
+
+	s.Mutex.Unlock()
 }
 
 // DeliverToUser 导出版（供其它包推送控制消息用）
 func (s *Server) DeliverToUser(userId string, raw []byte) {
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()
+	log.Printf("🚀 DeliverToUser success -> %s", userId)
+
+	log.Printf("🧪 DeliverToUser called: want=%q, current keys=%v",
+		userId,
+		keysOfClients(s.Clients),
+	)
+
 	if c, ok := s.Clients[userId]; ok {
 		select {
 		case c.SendBack <- raw:

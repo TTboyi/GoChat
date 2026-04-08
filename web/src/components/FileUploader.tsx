@@ -1,5 +1,6 @@
 import React, { useRef, useState } from "react";
 import api from "../api/api";
+import { API_BASE } from "../config";
 
 interface FileUploaderProps {
   onUploadSuccess: (url: string, type: string) => void;
@@ -23,7 +24,7 @@ const FileUploader: React.FC<FileUploaderProps> = ({ onUploadSuccess }) => {
       // ✅ 根据你的后端返回结构提取完整 URL
       const relativeUrl = res.data?.url;
       const fileUrl = relativeUrl
-        ? `http://localhost:8000${relativeUrl}`
+        ? `${API_BASE}${relativeUrl}`
         : "";
 
       if (fileUrl) {

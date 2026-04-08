@@ -16,17 +16,22 @@ type Client struct {
 
 // ChatMessageRequest 前端发来的消息结构
 type ChatMessageRequest struct {
-	Type      int8   `json:"type"`      // 0=文本, 1=文件, 2=通话信令
-	Content   string `json:"content"`   // 消息内容 / SDP / ICE
-	ReceiveId string `json:"receiveId"` // 接收方ID（用户或群）
-	SendId    string `json:"sendId"`    // 发送者ID（兜底client.Uuid）
-	Action    string `json:"action"`    // join_group / call_invite / call_answer / call_candidate / call_end / send_message
-	GroupId   string `json:"groupId"`   // 用于 join_group 订阅
+	Type      int8   `json:"type"`
+	Content   string `json:"content"`
+	ReceiveId string `json:"receiveId"`
+	SendId    string `json:"sendId"`
+	Action    string `json:"action"` // join_group / call_invite / call_answer / call_candidate / call_end
+	GroupId   string `json:"groupId"`
+	LocalId   string `json:"localId"`  // 乐观更新用
+	Url       string `json:"url"`
+	FileName  string `json:"fileName"`
+	FileType  string `json:"fileType"`
+	FileSize  string `json:"fileSize"`
 
-	// 通话相关字段
-	CallType string `json:"callType"` // "audio" | "video"
-	CallId   string `json:"callId"`   // 通话唯一ID
-	Accept   *bool  `json:"accept"`   // 对于 call_answer：true=接听 false=拒绝
+	// 通话相关
+	CallType string `json:"callType"`
+	CallId   string `json:"callId"`
+	Accept   *bool  `json:"accept"`
 }
 
 // Read 循环监听前端消息
@@ -45,12 +50,12 @@ func (c *Client) Read() {
 		}
 
 		var req ChatMessageRequest
-		log.Printf("🧩 收到前端 action=%q content len=%d", req.Action, len(req.Content))
 
 		if err := json.Unmarshal(data, &req); err != nil {
 			log.Printf("❌ 无法解析前端消息: %v", err)
 			continue
 		}
+		log.Printf("🧩 收到前端 action=%q content len=%d", req.Action, len(req.Content))
 
 		switch req.Action {
 		case "join_group":
@@ -69,14 +74,34 @@ func (c *Client) Read() {
 			continue
 
 		default:
-			// 普通消息
 			env := ChatEnvelope{
 				Type:      req.Type,
 				Content:   req.Content,
+				Url:       req.Url,
+				FileName:  req.FileName,
+				FileType:  req.FileType,
+				FileSize:  req.FileSize,
 				SendId:    nz(req.SendId, c.Uuid),
 				ReceiveId: req.ReceiveId,
+				LocalId:   req.LocalId,
 			}
-			ChatServer.Transmit <- env
+
+			log.Printf("📤 Send Kafka msg send=%s recv=%s type=%d content=%q",
+				env.SendId,
+				env.ReceiveId,
+				env.Type,
+				env.Content,
+			)
+
+			// // ✅ 1. 发 Kafka（新主链路）
+			if ChatKafkaProducer != nil {
+
+				ChatKafkaProducer.Publish(env)
+			}
+
+			// // ⚠️ 2. 暂时保留旧内存链路（下一阶段删除）
+			// ChatServer.Transmit <- env
+
 		}
 	}
 }

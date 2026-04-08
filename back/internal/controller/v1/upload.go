@@ -11,6 +11,7 @@ import (
 	"chatapp/back/internal/model"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 // 上传头像
@@ -53,6 +54,36 @@ func UploadAvatar(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "上传成功",
 		"url":     avatarURL,
+	})
+}
+
+// 上传图片（用于群头像等，不更新用户信息）
+func UploadImage(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "文件上传失败"})
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
+	if !allowed[ext] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "图片格式只支持 jpg/jpeg/png/gif/webp"})
+		return
+	}
+
+	id := strings.ReplaceAll(uuid.New().String(), "-", "")
+	newFileName := fmt.Sprintf("img_%s%s", id[:12], ext)
+	savePath := filepath.Join(config.GetConfig().StaticAvatarPath, newFileName)
+
+	if err := c.SaveUploadedFile(file, savePath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存文件失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "上传成功",
+		"url":     fmt.Sprintf("/static/avatars/%s", newFileName),
 	})
 }
 

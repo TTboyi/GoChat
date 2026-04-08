@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Modal from "./Modal";
 import { useForm } from "react-hook-form";
 import axios from "axios";
+import { API_BASE } from "../config";
 
 interface UpdateGroupInfoModalProps {
   isOpen: boolean;
@@ -39,7 +40,7 @@ const UpdateGroupInfoModal: React.FC<UpdateGroupInfoModalProps> = ({
         const formData = new FormData();
         formData.append("file", data.avatar);
 
-        const res = await axios.post("http://localhost:8000/upload/avatar", formData, {
+        const res = await axios.post(`${API_BASE}/upload/avatar`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
         avatarUrl = res.data.url;
@@ -54,7 +55,7 @@ const UpdateGroupInfoModal: React.FC<UpdateGroupInfoModalProps> = ({
         avatar: avatarUrl || "",
       };
 
-      const res2 = await axios.post("http://localhost:8000/group/updateGroupInfo", payload, {
+      const res2 = await axios.post(`${API_BASE}/group/updateGroupInfo`, payload, {
         headers: { "Content-Type": "application/json" },
       });
 

@@ -15,10 +15,13 @@ import (
 func initMessageRoutes(r *gin.RouterGroup) {
 	message := r.Group("/message")
 	{
-		message.POST("/list", v1.GetMessageList)           // 获取私聊消息
-		message.POST("/groupList", v1.GetGroupMessageList) // 获取群聊消息
-		message.POST("/uploadAvatar", v1.UploadAvatar)     // 上传头像
-		message.POST("/uploadFile", v1.UploadFile)         // 上传文件
+		message.POST("/list", v1.GetMessageList)             // 获取私聊消息
+		message.POST("/groupList", v1.GetGroupMessageList)   // 获取群聊消息
+		message.POST("/uploadAvatar", v1.UploadAvatar)       // 上传头像（更新用户profile）
+		message.POST("/uploadImage", v1.UploadImage)         // 上传图片（群头像等，不绑定用户）
+		message.POST("/uploadFile", v1.UploadFile)           // 上传文件
+		message.POST("/recall", v1.RecallMessageFull)        // 撤回消息
+		message.POST("/markRead", v1.MarkMessagesRead)       // 标记已读
 	}
 
 }
@@ -59,6 +62,7 @@ func initGroupRoutes(r *gin.RouterGroup) {
 		group.POST("/dismiss", v1.DismissGroupHandler)    // 解散群聊
 		group.POST("/updateName", v1.UpdateGroupName)
 		group.POST("/updateNotice", v1.UpdateGroupNotice)
+		group.POST("/updateAvatar", v1.UpdateGroupAvatar)
 		group.GET("/info", v1.GetGroupInfo)
 
 	}

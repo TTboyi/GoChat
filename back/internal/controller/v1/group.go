@@ -335,3 +335,21 @@ func UpdateGroupName(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "群名称已更新"})
 }
+
+// UpdateGroupAvatar 更新群头像（群主权限）
+func UpdateGroupAvatar(c *gin.Context) {
+	userId := c.GetString("userId")
+	var form struct {
+		GroupUuid string `json:"groupUuid" form:"groupUuid" binding:"required"`
+		Avatar    string `json:"avatar" form:"avatar" binding:"required"`
+	}
+	if err := c.ShouldBind(&form); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少参数"})
+		return
+	}
+	if err := service.UpdateGroupAvatar(userId, form.GroupUuid, form.Avatar); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "群头像已更新"})
+}

@@ -1,16 +1,16 @@
 import axios from "axios";
-import { getToken } from "../utils/session"; 
+import { getToken } from "../utils/session";
+import { API_BASE } from "../config";
 
 // 创建 axios 实例
 const api = axios.create({
-  baseURL: "http://localhost:8000", // 后端服务地址
+  baseURL: API_BASE,
   timeout: 10000,
 });
 
 // 请求拦截器：带上 JWT
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: any) => {
   const token = getToken();
-  console.log("👉 请求URL:", config.url, "带token:", token ? token.slice(0, 15) + "..." : "无token");
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -38,72 +38,77 @@ export default {
 
   // ================= 用户信息 =================
   getUserInfo: () => api.get("/api/user/info"),
-  
+
   updateUser: (data: any) => api.post("/user/update", data),
 
   // ================= 群聊 =================
-  createGroup: (data: { name: string; notice?: string; avatar?: string; addMode?: number; ownerId: string }) =>
-    api.post("/group/create", data),
+  createGroup: (data: {
+    name: string;
+    notice?: string;
+    avatar?: string;
+    addMode?: number;
+    ownerId: string;
+  }) => api.post("/group/create", data),
 
-    // 查询我创建的群
-    loadMyGroup: () => api.get("/group/loadMyGroup"),
+  // 查询我创建的群
+  loadMyGroup: () => api.get("/group/loadMyGroup"),
 
-    // 查询我加入的群（如果你在后端定义了 /contact/joinedGroups）
-    loadMyJoinedGroup: () => api.get("/contact/joinedGroups"),
-  
-    // 获取群成员
-    getGroupMembers: (groupUuid: string) =>
-      api.get("/group/members", { params: { groupUuid : groupUuid} }),
-  
-    // 直接加入群聊
-    enterGroup: (data: { groupId: string; message?: string }) => {
-      const formData = new FormData();
-      formData.append("groupId", data.groupId); // ✅ 对应 EnterGroupDirectly 的 c.PostForm("groupId")
-      if (data.message) formData.append("message", data.message);
-      return api.post("/group/enter", formData);
-    },
-  
-    // 退出群聊
-    leaveGroup: (data: { groupUuid: string }) => {
-      const formData = new FormData();
-      formData.append("groupId", data.groupUuid);
-      return api.post("/group/leave", formData);
-    },
-  
-    // 移除群成员（群主权限）
-    removeMember: (data: { groupUuid: string; targetUserId: string }) => {
-      const formData = new FormData();
-      formData.append("groupUuid", data.groupUuid);
-      formData.append("targetUserId", data.targetUserId);
-      return api.post("/group/removeGroupMember", formData);
-    },
-  
-    
-    // 获取群聊消息列表
-    getGroupMessageList: (data: { groupId: string; limit?: number }) =>
-      api.post("/message/groupList", data),
+  // 查询我加入的群
+  loadMyJoinedGroup: () => api.get("/contact/joinedGroups"),
 
+  // 获取群成员
+  getGroupMembers: (groupUuid: string) =>
+    api.get("/group/members", { params: { groupUuid: groupUuid } }),
 
-// 群聊详情与管理
-getGroupInfo: (groupId: string) =>
-  api.get("/group/info", { params: { groupId } }),
+  // 直接加入群聊
+  enterGroup: (data: { groupId: string; message?: string }) => {
+    const formData = new FormData();
+    formData.append("groupId", data.groupId);
+    if (data.message) formData.append("message", data.message);
+    return api.post("/group/enter", formData);
+  },
 
-updateGroupName: (data: { groupId: string; name: string }) =>
-  api.post("/group/updateName", data),
+  // 退出群聊
+  leaveGroup: (data: { groupUuid: string }) => {
+    const formData = new FormData();
+    formData.append("groupId", data.groupUuid);
+    return api.post("/group/leave", formData);
+  },
 
-updateGroupNotice: (data: { groupId: string; notice: string }) =>
-  api.post("/group/updateNotice", data),
+  // 移除群成员（群主权限）
+  removeMember: (data: { groupUuid: string; targetUserId: string }) => {
+    const formData = new FormData();
+    formData.append("groupUuid", data.groupUuid);
+    formData.append("targetUserId", data.targetUserId);
+    return api.post("/group/removeMember", formData);
+  },
 
-quitGroup: (data: { groupId: string; userId: string }) =>
-  api.post("/group/quit", data),
+  // 群聊详情与管理
+  getGroupInfo: (groupId: string) =>
+    api.get("/group/info", { params: { groupId } }),
 
-dismissGroup: (data: {  groupId: string }) =>
-  api.post("/group/dismiss", data),
-// ✅ 先占位（后端暂时没写）群信息接口
+  updateGroupName: (data: { groupId: string; name: string }) => {
+    const formData = new FormData();
+    formData.append("groupUuid", data.groupId);
+    formData.append("name", data.name);
+    return api.post("/group/updateName", formData);
+  },
 
+  updateGroupNotice: (data: { groupId: string; notice: string }) => {
+    const formData = new FormData();
+    formData.append("groupUuid", data.groupId);
+    formData.append("notice", data.notice);
+    return api.post("/group/updateNotice", formData);
+  },
 
+  updateGroupAvatar: (data: { groupUuid: string; avatar: string }) =>
+    api.post("/group/updateAvatar", data),
 
+  quitGroup: (data: { groupId: string; userId: string }) =>
+    api.post("/group/quit", data),
 
+  dismissGroup: (data: { groupId: string }) =>
+    api.post("/group/dismiss", data),
 
   // ================= 联系人 =================
   applyContact: (data: { target: string; message: string }) =>
@@ -115,10 +120,10 @@ dismissGroup: (data: {  groupId: string }) =>
     api.post("/contact/black", data),
   unblackContact: (data: { userId: string }) =>
     api.post("/contact/unblack", data),
-  
-getNewContactList: () => api.get("/contact/newList"),
-handleContactApply: (data: { applyUuid: string; approve: boolean }) =>
-  api.post("/contact/handle", data),
+
+  getNewContactList: () => api.get("/contact/newList"),
+  handleContactApply: (data: { applyUuid: string; approve: boolean }) =>
+    api.post("/contact/handle", data),
 
   // ================= 会话 =================
   openSession: (data: { targetId: string; type: "user" | "group" }) =>
@@ -129,23 +134,40 @@ handleContactApply: (data: { applyUuid: string; approve: boolean }) =>
     api.post("/session/delete", data),
 
   // ================= 消息 =================
-  getMessageList: (data: { targetId: string, limit: number}) =>
+  getMessageList: (data: { targetId: string; limit?: number; beforeTime?: number }) =>
     api.post("/message/list", data),
-  
-  uploadAvatar: async(formData: FormData) =>{
-    const res =  await api.post("/message/uploadAvatar", formData, {
+
+  getGroupMessageList: (data: { groupId: string; limit?: number; beforeTime?: number }) =>
+    api.post("/message/groupList", data),
+
+  recallMessage: (data: { msgId: string; receiveId: string }) =>
+    api.post("/message/recall", data),
+
+  markMessagesRead: (data: { senderId: string }) =>
+    api.post("/message/markRead", data),
+
+  uploadAvatar: async (formData: FormData) => {
+    const res = await api.post("/message/uploadAvatar", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
-        // ✅ 与后端一致：返回 { message, url }
     const relativeUrl = res.data?.url;
-    const avatarUrl = relativeUrl ? `http://localhost:8000${relativeUrl}` : "";
-  return { avatarUrl };
-    },
+    const avatarUrl = relativeUrl ? `${API_BASE}${relativeUrl}` : "";
+    return { avatarUrl, relativeUrl };
+  },
+
+  uploadImage: async (formData: FormData) => {
+    const res = await api.post("/message/uploadImage", formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    const relativeUrl = res.data?.url;
+    const imageUrl = relativeUrl ? `${API_BASE}${relativeUrl}` : "";
+    return { imageUrl, relativeUrl };
+  },
+
   uploadFile: (formData: FormData) =>
     api.post("/message/uploadFile", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     }),
-  
 
   // ================= 管理员 =================
   getAllUsers: () => api.get("/admin/users"),
@@ -155,4 +177,3 @@ handleContactApply: (data: { applyUuid: string; approve: boolean }) =>
   adminDismissGroup: (id: string) => api.delete(`/admin/groups/${id}`),
   getSystemStats: () => api.get("/admin/stats"),
 };
-

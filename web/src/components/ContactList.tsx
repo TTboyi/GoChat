@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { API_BASE } from "../config";
 
 interface Contact {
   user_id: string;
@@ -17,7 +18,7 @@ const ContactList: React.FC<ContactListProps> = ({ onSelect, userId }) => {
 
   const loadContacts = async () => {
     try {
-      const res = await axios.post("http://localhost:8000/contact/getUserList", {
+      const res = await axios.post(`${API_BASE}/contact/getUserList`, {
         owner_id: userId,
       });
       if (res.data.data) {
@@ -25,7 +26,7 @@ const ContactList: React.FC<ContactListProps> = ({ onSelect, userId }) => {
           ...c,
           avatar: c.avatar.startsWith("http")
             ? c.avatar
-            : "http://localhost:8000" + c.avatar,
+            : API_BASE + c.avatar,
         }));
         setContacts(list);
       }

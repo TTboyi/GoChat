@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Modal from "./Modal";
 import axios from "axios";
+import { API_BASE } from "../config";
 
 interface NewContact {
   contact_id: string;
@@ -25,7 +26,7 @@ const NewContactModal: React.FC<NewContactModalProps> = ({
   // 加载新的好友申请
   const loadNewContacts = async () => {
     try {
-      const res = await axios.post("http://localhost:8000/contact/getNewContactList", {
+      const res = await axios.post(`${API_BASE}/contact/getNewContactList`, {
         owner_id: userId,
       });
       if (res.data.data) {
@@ -33,7 +34,7 @@ const NewContactModal: React.FC<NewContactModalProps> = ({
           ...c,
           contact_avatar: c.contact_avatar.startsWith("http")
             ? c.contact_avatar
-            : "http://localhost:8000" + c.contact_avatar,
+            : API_BASE + c.contact_avatar,
         }));
         setNewContacts(list);
       } else {
@@ -53,7 +54,7 @@ const NewContactModal: React.FC<NewContactModalProps> = ({
   // 同意申请
   const handleAgree = async (contactId: string) => {
     try {
-      const res = await axios.post("http://localhost:8000/contact/passContactApply", {
+      const res = await axios.post(`${API_BASE}/contact/passContactApply`, {
         owner_id: userId,
         contact_id: contactId,
       });
@@ -67,7 +68,7 @@ const NewContactModal: React.FC<NewContactModalProps> = ({
   // 拒绝申请
   const handleReject = async (contactId: string) => {
     try {
-      const res = await axios.post("http://localhost:8000/contact/refuseContactApply", {
+      const res = await axios.post(`${API_BASE}/contact/refuseContactApply`, {
         owner_id: userId,
         contact_id: contactId,
       });
@@ -81,7 +82,7 @@ const NewContactModal: React.FC<NewContactModalProps> = ({
   // 拉黑
   const handleBlack = async (contactId: string) => {
     try {
-      const res = await axios.post("http://localhost:8000/contact/blackApply", {
+      const res = await axios.post(`${API_BASE}/contact/blackApply`, {
         owner_id: userId,
         contact_id: contactId,
       });
