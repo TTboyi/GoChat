@@ -1,4 +1,24 @@
 # =========================
+# Project-specific binaries
+# =========================
+/main
+/websocat
+/chatapp-server
+
+# =========================
+# Static uploaded files (keep directories, ignore contents)
+# =========================
+/static/avatars/*
+!/static/avatars/.gitkeep
+/static/files/*
+!/static/files/.gitkeep
+
+# =========================
+# Claude Code
+# =========================
+CLAUDE.md
+
+# =========================
 # Go Backend
 # =========================
 /back/bin/
@@ -79,3 +99,6 @@ __pycache__/
 *.crt
 *.cert
 secrets/
+
+# Keep frontend production env (contains API base URL, not secrets)
+!/web/.env.production
