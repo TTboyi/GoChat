@@ -1,10 +1,11 @@
 // src/hooks/useGroupActions.ts
 import axios from "axios";
+import { API_BASE } from "../config";
 
 export const leaveGroup = async (groupId: string) => {
   try {
     const res = await axios.post(
-      "http://localhost:8080/group/leaveGroup",
+      `${API_BASE}/group/leaveGroup`,
       new URLSearchParams({ groupUuid: groupId }),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
@@ -18,7 +19,7 @@ export const leaveGroup = async (groupId: string) => {
 export const dismissGroup = async (groupId: string) => {
   try {
     const res = await axios.post(
-      "http://localhost:8080/group/dismissGroup",
+      `${API_BASE}/group/dismissGroup`,
       new URLSearchParams({ groupUuid: groupId }),
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );

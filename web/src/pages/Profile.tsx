@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import api from "../api/api";
+import { API_BASE } from "../config";
 
 interface UserInfo {
   uuid: string;
@@ -102,7 +103,7 @@ const Profile: React.FC = () => {
           <img
             src={
               userInfo.avatar
-                ? `http://localhost:8080${userInfo.avatar}`
+                ? `${API_BASE}${userInfo.avatar}`
                 : "https://via.placeholder.com/100"
             }
             alt="头像"

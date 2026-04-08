@@ -1,10 +1,11 @@
 // src/hooks/useContactActions.ts
 import axios from "axios";
+import { API_BASE } from "../config";
 
 // 删除联系人
 export const deleteContact = async (ownerId: string, contactId: string) => {
   try {
-    const res = await axios.post("http://localhost:8080/contact/deleteContact", {
+    const res = await axios.post(`${API_BASE}/contact/deleteContact`, {
       owner_id: ownerId,
       contact_id: contactId,
     });
@@ -20,7 +21,7 @@ export const deleteContact = async (ownerId: string, contactId: string) => {
 // 拉黑联系人
 export const blackContact = async (ownerId: string, contactId: string) => {
   try {
-    const res = await axios.post("http://localhost:8080/contact/blackContact", {
+    const res = await axios.post(`${API_BASE}/contact/blackContact`, {
       owner_id: ownerId,
       contact_id: contactId,
     });
@@ -37,7 +38,7 @@ export const blackContact = async (ownerId: string, contactId: string) => {
 export const cancelBlackContact = async (ownerId: string, contactId: string) => {
   try {
     const res = await axios.post(
-      "http://localhost:8080/contact/cancelBlackContact",
+      `${API_BASE}/contact/cancelBlackContact`,
       {
         owner_id: ownerId,
         contact_id: contactId,
