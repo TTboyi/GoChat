@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getToken } from "../utils/session";
+import { getToken, setToken, clearToken } from "../utils/session";
 import { API_BASE } from "../config";
 
 // 创建 axios 实例
@@ -16,6 +16,58 @@ api.interceptors.request.use((config: any) => {
   }
   return config;
 });
+
+// ✅ 响应拦截器：Token 过期时自动刷新（避免视频通话中途因 401 失败）
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+    // 只处理 401，且只重试一次，且不是 refresh 请求本身
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !originalRequest.url?.includes("/auth/refresh")
+    ) {
+      originalRequest._retry = true;
+
+      // 防止并发刷新（多个请求同时 401 时只刷新一次）
+      if (!isRefreshing) {
+        isRefreshing = true;
+        refreshPromise = axios
+          .post(`${API_BASE}/auth/refresh`, {}, { withCredentials: true })
+          .then((res) => {
+            const newToken = res.data?.token || res.data?.data?.token;
+            if (newToken) {
+              setToken(newToken);
+              return newToken;
+            }
+            return null;
+          })
+          .catch(() => null)
+          .finally(() => {
+            isRefreshing = false;
+            refreshPromise = null;
+          });
+      }
+
+      const newToken = await refreshPromise;
+      if (newToken) {
+        // 用新 token 重试原请求
+        originalRequest.headers.Authorization = `Bearer ${newToken}`;
+        return api(originalRequest);
+      } else {
+        // 刷新失败 → 清除 token，跳回登录页
+        clearToken();
+        window.location.href = "/";
+        return Promise.reject(error);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default {
   // ================= 用户认证 =================
