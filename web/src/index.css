@@ -37,9 +37,12 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  /* background-color: #1a1a1a; */
   cursor: pointer;
   transition: border-color 0.25s;
+  /* ✅ 移动端：禁用 iOS/Android 点击高亮和长按菜单 */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
 }
 button:hover {
   border-color: #646cff;
@@ -47,6 +50,18 @@ button:hover {
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* ✅ 移动端全局重置：禁用所有可交互元素的点击高亮 */
+a, button, input, textarea, select, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* ✅ 防止 iOS Safari 自动调整字体大小 */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 @media (prefers-color-scheme: light) {

@@ -1,7 +1,8 @@
 import React from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
-import api from "../api/api"; // ✅ 调用后端接口
+import api from "../api/api";
+import { setToken } from "../utils/session";
 
 type RegisterForm = {
   username: string;
@@ -16,18 +17,31 @@ const Register: React.FC = () => {
 
   const onSubmit = async (data: RegisterForm) => {
     try {
-      // 调用后端注册接口
+      // 1. 调用注册接口
       const res = await api.register({
         nickname: data.username,
         password: data.password,
       });
 
-      // 判断返回值
-      if (res.data?.code === 0 || res.data?.message === "注册成功") {
-        alert("注册成功！");
-        navigate("/"); // 返回登录页
-      } else {
+      const ok = res.data?.code === 0 || res.data?.message === "注册成功";
+      if (!ok) {
         alert(res.data?.message || "注册失败");
+        return;
+      }
+
+      // 2. ✅ 注册成功后自动登录，无需手动跳转
+      const loginRes = await api.login({
+        nickname: data.username,
+        password: data.password,
+      });
+      const token = loginRes.data?.token || loginRes.data?.data?.token;
+      if (token) {
+        setToken(token);
+        navigate("/chat"); // 直接进入聊天页
+      } else {
+        // 极少数情况：注册成功但自动登录失败，回到登录页
+        alert("注册成功！请手动登录");
+        navigate("/");
       }
     } catch (err) {
       alert("注册请求失败，请检查网络或后端服务");

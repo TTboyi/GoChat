@@ -22,7 +22,6 @@ const Login: React.FC = () => {
       const token = res.data?.token || res.data?.data?.token;
     if (token) {
       setToken(token);
-      alert("登录成功！");
       navigate("/chat");
     } else {
       alert("登录失败：未返回 Token");

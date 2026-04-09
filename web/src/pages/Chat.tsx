@@ -74,6 +74,8 @@ const Chat: React.FC = () => {
   // ===== WebSocket =====
   const [ws, setWs] = useState<ChatWebSocket | null>(null);
   const wsRef = useRef<ChatWebSocket | null>(null);
+  // ✅ 始终指向最新的 handleIncomingMessage，避免 WS 闭包过期
+  const handleIncomingMessageRef = useRef<((msg: any) => void) | null>(null);
 
   // ===== 群聊信息 =====
   const [groupMembers, setGroupMembers] = useState<string[]>([]);
@@ -266,8 +268,14 @@ const Chat: React.FC = () => {
         return;
       }
 
-      // ✅ 好友申请被接受 - 刷新联系人列表
+      // ✅ 好友申请被接受（申请方收到）- 刷新联系人列表
       if (anyMsg.action === "contact_apply_accepted") {
+        loadContacts();
+        return;
+      }
+
+      // ✅ 联系人列表更新（接受方收到）- 刷新联系人列表
+      if (anyMsg.action === "contact_list_updated") {
         loadContacts();
         return;
       }
@@ -442,11 +450,7 @@ const Chat: React.FC = () => {
       contacts.forEach((c) => { if (c.id) idx[c.id] = "user"; });
       setSessionIndex(idx);
       setGroupIdSet(new Set(groups.map((g) => g.id)));
-
-      setActiveId((prev) => {
-        if (prev && unique.find((s) => s.id === prev)) return prev;
-        return unique[0]?.id || "";
-      });
+      // ✅ 不在这里调用 setActiveId，由独立的 sessions effect 负责，避免每次刷新联系人都重置当前对话
     } catch (e) {
       console.error("加载联系人或群聊失败：", e);
     }
@@ -507,8 +511,27 @@ const Chat: React.FC = () => {
     if (activeId) loadMessages(activeId, true);
   }, [activeId, loadMessages]);
 
+  // ✅ 每次渲染都同步最新的 handleIncomingMessage 到 ref（必须在 effects 之前赋值）
+  handleIncomingMessageRef.current = handleIncomingMessage;
+
   // ===== Effects =====
   useEffect(() => { loadContacts(); }, []);
+
+  // ✅ sessions 变化时，只在未初始化或当前会话失效时才调整 activeId
+  const activeIdInitialized = useRef(false);
+  useEffect(() => {
+    if (sessions.length === 0) return;
+    setActiveId((prev) => {
+      // 当前已有有效会话，保持不变
+      if (prev && sessions.find((s) => s.id === prev)) {
+        activeIdInitialized.current = true;
+        return prev;
+      }
+      // 初次加载或当前会话已失效，回退到第一个
+      activeIdInitialized.current = true;
+      return sessions[0]?.id || "";
+    });
+  }, [sessions]);
 
   useEffect(() => {
     const stored = loadMessagesFromStorage();
@@ -546,20 +569,26 @@ const Chat: React.FC = () => {
     }
   }, [activeId, sessions.length]);
 
+  // ✅ WebSocket 只在首次 / token 变化时建立连接，不跟随 myGroups 重建
   useEffect(() => {
     const token = getToken();
     if (!token) return;
     const socket = new ChatWebSocket({
       token,
-      onOpen: () => {
-        myGroups.forEach((g) => socket.send({ action: "join_group", groupId: g.uuid }));
-      },
-      onMessage: handleIncomingMessage,
+      // ✅ 始终通过 ref 派发，保证调用的是最新版 handleIncomingMessage
+      onMessage: (msg) => handleIncomingMessageRef.current?.(msg),
       onClose: () => console.log("WebSocket 已关闭"),
     });
     setWs(socket);
     wsRef.current = socket;
     return () => socket.close();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // 只在挂载时建立一次
+
+  // ✅ 群订阅：myGroups 变化时向已有连接补发 join_group，无需重建 WS
+  useEffect(() => {
+    if (!wsRef.current || myGroups.length === 0) return;
+    myGroups.forEach((g) => wsRef.current!.send({ action: "join_group", groupId: g.uuid }));
   }, [myGroups]);
 
   const handleLogout = () => {

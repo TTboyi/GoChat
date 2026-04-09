@@ -176,4 +176,7 @@ export default {
   getAllGroups: () => api.get("/admin/groups"),
   adminDismissGroup: (id: string) => api.delete(`/admin/groups/${id}`),
   getSystemStats: () => api.get("/admin/stats"),
+
+  // ================= TURN 服务器动态凭证 =================
+  getTurnCredentials: () => api.get("/turn/credentials"),
 };

@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import type { CallState, SessionItem } from "../types/chat";
 import type { ChatWebSocket } from "../api/socket";
 import { callCandidate, callEnd } from "../api/socket";
+import api from "../api/api";
 
 const IDLE_CALL_STATE: CallState = {
   callId: null,
@@ -18,6 +19,53 @@ export interface IncomingCall {
   fromName?: string;
   callType: "audio" | "video";
   offer: string; // JSON stringified RTCSessionDescriptionInit
+}
+
+// ✅ 从后端获取动态 TURN 凭证，构建 ICE 服务器列表
+async function fetchIceServers(): Promise<RTCIceServer[]> {
+  // 基础 STUN（总是可用）
+  const stunServers: RTCIceServer[] = [
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+  ];
+
+  try {
+    const res = await api.getTurnCredentials();
+    const { username, password, uris } = res.data;
+    if (username && password && Array.isArray(uris)) {
+      return [
+        ...stunServers,
+        {
+          urls: uris,
+          username,
+          credential: password,
+        },
+      ];
+    }
+  } catch (e) {
+    console.warn("⚠️ 无法获取 TURN 凭证，仅使用 STUN（跨网络通话可能失败）:", e);
+  }
+
+  return stunServers;
+}
+
+// ✅ 将媒体流挂载到 video 元素（含重试保障）
+function attachStream(
+  videoRef: RefObject<HTMLVideoElement | null>,
+  stream: MediaStream,
+  retries = 5
+) {
+  const tryAttach = (remaining: number) => {
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(() => {}); // 忽略自动播放策略错误
+      return;
+    }
+    if (remaining > 0) {
+      setTimeout(() => tryAttach(remaining - 1), 80);
+    }
+  };
+  tryAttach(retries);
 }
 
 export function useWebRTC(
@@ -40,22 +88,6 @@ export function useWebRTC(
     callStateRef.current = callState;
   }, [callState]);
 
-  // ✅ 当 callState 变为非 idle 时，将本地流挂载到 video 元素
-  useEffect(() => {
-    if (callState.status === "idle") return;
-    if (!localStreamRef.current) return;
-
-    const tryAttach = () => {
-      if (localVideoRef.current && localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-      }
-    };
-    tryAttach();
-    // 等 DOM 更新完毕后再试一次
-    const t = setTimeout(tryAttach, 80);
-    return () => clearTimeout(t);
-  }, [callState.status]);
-
   const cleanupCall = useCallback(() => {
     setCallState(IDLE_CALL_STATE);
     if (peerRef.current) {
@@ -70,6 +102,7 @@ export function useWebRTC(
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
   }, []);
 
+  // ✅ 主叫：发起通话
   const startCall = useCallback(
     async (callType: "audio" | "video", active: SessionItem) => {
       const ws = wsRef.current;
@@ -97,7 +130,7 @@ export function useWebRTC(
       try {
         const constraints =
           callType === "video"
-            ? { video: true, audio: true }
+            ? { video: { facingMode: "user" }, audio: true }
             : { audio: true };
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (err: any) {
@@ -108,7 +141,12 @@ export function useWebRTC(
 
       localStreamRef.current = stream;
 
-      // 先设置状态（触发 CallWindow 渲染 + useEffect 挂载 stream）
+      // ✅ 立即挂载本地视频（不等 callState 变化）
+      if (callType === "video") {
+        attachStream(localVideoRef, stream);
+      }
+
+      // 设置状态（触发 CallWindow 渲染）
       setCallState({
         callId,
         peerId: active.id,
@@ -117,25 +155,20 @@ export function useWebRTC(
         isCaller: true,
       });
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun2.l.google.com:19302" },
-        ],
-      });
+      // ✅ 获取动态 TURN 凭证
+      const iceServers = await fetchIceServers();
+      const pc = new RTCPeerConnection({ iceServers });
       peerRef.current = pc;
 
-      if (callType === "video") {
-        stream.getVideoTracks().forEach((t) => pc.addTrack(t, stream));
-      }
-      stream.getAudioTracks().forEach((t) => pc.addTrack(t, stream));
+      // 添加本地轨道
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
       pc.ontrack = (event) => {
         const [remoteStream] = event.streams;
-        if (remoteVideoRef.current && callType === "video") {
-          remoteVideoRef.current.srcObject = remoteStream;
-        }
-        if (callType === "audio") {
+        if (callType === "video") {
+          attachStream(remoteVideoRef, remoteStream);
+        } else {
+          // 语音通话：动态创建 audio 元素播放远端流
           const audioEl = document.createElement("audio");
           audioEl.srcObject = remoteStream;
           audioEl.autoplay = true;
@@ -146,6 +179,16 @@ export function useWebRTC(
       pc.onicecandidate = (event) => {
         if (event.candidate) {
           callCandidate(ws, active.id, callId, event.candidate);
+        }
+      };
+
+      pc.oniceconnectionstatechange = () => {
+        console.log("📡 ICE 状态:", pc.iceConnectionState);
+        if (
+          pc.iceConnectionState === "disconnected" ||
+          pc.iceConnectionState === "failed"
+        ) {
+          console.warn("⚠️ ICE 连接失败或断开");
         }
       };
 
@@ -173,7 +216,7 @@ export function useWebRTC(
     cleanupCall();
   }, [wsRef, cleanupCall]);
 
-  // ✅ 接受来电
+  // ✅ 接听来电（被叫）
   const acceptIncomingCall = useCallback(async () => {
     const pending = incomingCall;
     if (!pending) return;
@@ -184,6 +227,7 @@ export function useWebRTC(
 
     const { callId, from, callType, offer: offerStr } = pending;
 
+    // 先更新状态（触发 CallWindow 渲染）
     setCallState({
       callId,
       peerId: from,
@@ -195,7 +239,9 @@ export function useWebRTC(
     let stream: MediaStream;
     try {
       const constraints =
-        callType === "video" ? { video: true, audio: true } : { audio: true };
+        callType === "video"
+          ? { video: { facingMode: "user" }, audio: true }
+          : { audio: true };
       stream = await navigator.mediaDevices.getUserMedia(constraints);
     } catch {
       alert("无法访问摄像头/麦克风");
@@ -206,18 +252,28 @@ export function useWebRTC(
 
     localStreamRef.current = stream;
 
-    const pc2 = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-      ],
-    });
+    // ✅ 被叫立即挂载本地视频（修复移动端/接收方看不到自己画面的 bug）
+    if (callType === "video") {
+      attachStream(localVideoRef, stream);
+    }
+
+    // ✅ 获取动态 TURN 凭证
+    const iceServers = await fetchIceServers();
+    const pc2 = new RTCPeerConnection({ iceServers });
     peerRef.current = pc2;
+
+    // 添加本地所有轨道
     stream.getTracks().forEach((t) => pc2.addTrack(t, stream));
 
     pc2.ontrack = (event) => {
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
+      const [remoteStream] = event.streams;
+      if (callType === "video") {
+        attachStream(remoteVideoRef, remoteStream);
+      } else {
+        const audioEl = document.createElement("audio");
+        audioEl.srcObject = remoteStream;
+        audioEl.autoplay = true;
+        document.body.appendChild(audioEl);
       }
     };
 
@@ -230,6 +286,10 @@ export function useWebRTC(
           content: JSON.stringify(event.candidate),
         });
       }
+    };
+
+    pc2.oniceconnectionstatechange = () => {
+      console.log("📡 ICE 状态（被叫）:", pc2.iceConnectionState);
     };
 
     const remoteOffer = JSON.parse(offerStr);
