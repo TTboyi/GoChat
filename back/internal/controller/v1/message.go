@@ -147,3 +147,22 @@ func MarkMessagesRead(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "已读"})
 }
+
+// ClearConversation 删除好友时清除双方的聊天记录（物理删除）
+func ClearConversation(c *gin.Context) {
+	userId := c.GetString("userId")
+	var form struct {
+		TargetId string `json:"targetId" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&form); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	if err := service.ClearConversation(userId, form.TargetId); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "清除失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "已清除"})
+}

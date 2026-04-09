@@ -12,10 +12,9 @@ interface ChatMessagesProps {
   userAvatar?: string;
   listRef: RefObject<HTMLDivElement | null>;
   hasMore?: boolean;
+  isDark?: boolean;
   onLoadMore?: () => void;
   onRecall?: (msg: Message) => void;
-  // ✅ 点击对方头像：触发好友操作菜单
-  onAvatarClick?: (sendId: string, sendName?: string, sendAvatar?: string) => void;
 }
 
 // ---- Telegram 风格已读勾 ----
@@ -95,9 +94,9 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
   userAvatar,
   listRef,
   hasMore = false,
+  isDark = true,
   onLoadMore,
   onRecall,
-  onAvatarClick,
 }) => {
   const [contextMenu, setContextMenu] = React.useState<{x: number; y: number; msg: Message} | null>(null);
   // 用于加载更多时保持滚动位置
@@ -155,7 +154,7 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
   };
 
   return (
-    <div ref={listRef} className="flex-1 overflow-y-auto px-6 py-4 bg-[#eaeaea]">
+    <div ref={listRef} className={`flex-1 overflow-y-auto px-6 py-4 ${isDark ? "bg-[#1e1e1e]" : "bg-[#eaeaea]"}`}>
       {/* 加载更多 */}
       {hasMore && (
         <div className="flex justify-center mb-4">
@@ -211,30 +210,21 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
               className={cn("flex items-end gap-2", isSelf ? "justify-end" : "justify-start")}
               onContextMenu={(e) => handleContextMenu(e, m)}
             >
-              {/* 对方头像（可点击） */}
+              {/* 对方头像（静态，不可点击；好友资料请点击顶部标题栏） */}
               {!isSelf && (
                 <div className="flex-shrink-0 self-start mt-1">
-                  <button
-                    onClick={() => active?.type !== "group" && onAvatarClick?.(m.sendId!, m.sendName, m.sendAvatar)}
-                    className={cn(
-                      "p-0 border-none bg-transparent w-8 h-8 rounded-md overflow-hidden",
-                      active?.type !== "group" ? "cursor-pointer hover:opacity-80 active:opacity-60 transition" : "cursor-default"
-                    )}
-                    title={active?.type !== "group" ? "查看好友信息" : undefined}
-                  >
-                    {peerAvatarUrl ? (
-                      <img
-                        src={`${peerAvatarUrl}?v=${avatarVersion}`}
-                        alt={m.sendName}
-                        className="w-8 h-8 rounded-md object-cover"
-                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = ""; (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-md bg-gray-400 flex items-center justify-center text-xs text-white font-bold">
-                        {(m.sendName || m.sendId || "?")[0].toUpperCase()}
-                      </div>
-                    )}
-                  </button>
+                  {peerAvatarUrl ? (
+                    <img
+                      src={`${peerAvatarUrl}?v=${avatarVersion}`}
+                      alt={m.sendName}
+                      className="w-8 h-8 rounded-md object-cover"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = ""; (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-md bg-gray-400 flex items-center justify-center text-xs text-white font-bold">
+                      {(m.sendName || m.sendId || "?")[0].toUpperCase()}
+                    </div>
+                  )}
                 </div>
               )}
 

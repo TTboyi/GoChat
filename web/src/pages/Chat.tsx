@@ -110,6 +110,19 @@ const Chat: React.FC = () => {
   const showNewFriendRef = useRef(false);
   useEffect(() => { showNewFriendRef.current = showNewFriend; }, [showNewFriend]);
 
+  // ===== 界面风格（深色/浅色）=====
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    const saved = localStorage.getItem("chat_theme");
+    return saved !== null ? saved === "dark" : true; // 默认深色
+  });
+  const handleToggleTheme = () => {
+    setIsDark((prev) => {
+      const next = !prev;
+      localStorage.setItem("chat_theme", next ? "dark" : "light");
+      return next;
+    });
+  };
+
   // ===== WebRTC =====
   const {
     callState,
@@ -627,7 +640,7 @@ const Chat: React.FC = () => {
   const hasMore = hasMoreMap[activeId] || false;
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-[#ededed] flex">
+    <div className={`h-screen w-screen overflow-hidden flex ${isDark ? "bg-[#242424]" : "bg-gray-100"}`}>
       {/* ===== Sidebar ===== */}
       <div
         style={{
@@ -644,11 +657,13 @@ const Chat: React.FC = () => {
           activeId={activeId}
           unreadCounts={unreadCounts}
           onlineUsers={onlineUsers}
+          isDark={isDark}
+          onToggleTheme={handleToggleTheme}
           onSelectSession={handleSelectSession}
           onShowProfile={() => setShowProfile(true)}
           onLogout={handleLogout}
           onShowNewFriend={() => {
-            newApplyAutoShownRef.current = false; // 手动打开重置标志
+            newApplyAutoShownRef.current = false;
             setShowNewFriend(true);
           }}
           onShowAddFriend={() => setShowAddFriend(true)}
@@ -660,14 +675,18 @@ const Chat: React.FC = () => {
       {/* ===== 主聊天区域 ===== */}
       <main
         style={{ display: showMain ? "flex" : "none" }}
-        className="flex-1 flex-col bg-[#f5f5f5] min-w-0"
+        className={`flex-1 flex-col min-w-0 ${isDark ? "bg-[#1e1e1e]" : "bg-gray-50"}`}
       >
         {/* 移动端顶部返回栏 */}
         {isMobile && (
-          <div className="flex items-center h-11 px-3 bg-[#ededed] border-b border-black/10 flex-shrink-0">
+          <div className={`flex items-center h-11 px-3 border-b flex-shrink-0 ${
+            isDark ? "bg-[#2e2e2e] border-black/20 text-gray-200" : "bg-white border-gray-200 text-gray-800"
+          }`}>
             <button
               onClick={() => setMobileView("sidebar")}
-              className="flex items-center gap-1 text-blue-500 text-sm py-1 px-1 -ml-1"
+              className={`flex items-center gap-1 text-sm py-1 px-1 -ml-1 bg-transparent border-none ${
+                isDark ? "text-blue-400" : "text-blue-500"
+              }`}
             >
               <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -679,12 +698,24 @@ const Chat: React.FC = () => {
         )}
 
         <ChatHeader
-          active={active}
+          active={active && active.type === "user" && remarks[active.id]
+            ? { ...active, name: remarks[active.id] }
+            : active}
           avatarVersion={avatarVersion}
           groupMemberCount={groupMembers.length}
           groupNotice={groupNotice}
+          isDark={isDark}
           onShowGroupMembers={() => { setShowGroupMembers(true); loadGroupMembers(); }}
           onShowGroupInfo={() => setShowGroupInfo(true)}
+          onShowFriendProfile={() => {
+            if (!active || active.type !== "user") return;
+            setFriendProfile({
+              uuid: active.id,
+              nickname: sessions.find((s) => s.id === active.id)?.name || active.name,
+              avatar: active.avatar,
+              remark: remarks[active.id],
+            });
+          }}
         />
 
         <ChatMessages
@@ -696,16 +727,9 @@ const Chat: React.FC = () => {
           userAvatar={user?.avatar}
           listRef={listRef}
           hasMore={hasMore}
+          isDark={isDark}
           onLoadMore={handleLoadMore}
           onRecall={handleRecall}
-          onAvatarClick={(sendId, sendName, sendAvatar) => {
-            setFriendProfile({
-              uuid: sendId,
-              nickname: sendName || sendId,
-              avatar: sendAvatar,
-              remark: remarks[sendId],
-            });
-          }}
         />
 
         <ChatInput

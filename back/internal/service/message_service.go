@@ -88,3 +88,14 @@ func GetUnreadCount(ctx context.Context, receiverId, senderId string) (int64, er
 		Count(&count).Error
 	return count, err
 }
+
+// ClearConversation 物理删除两人之间的所有消息（删除好友时调用）
+func ClearConversation(userId, targetId string) error {
+	db := config.GetDB()
+	return db.
+		Where(
+			"(send_id = ? AND receive_id = ?) OR (send_id = ? AND receive_id = ?)",
+			userId, targetId, targetId, userId,
+		).
+		Delete(&model.Message{}).Error
+}
