@@ -198,6 +198,10 @@ export default {
   markMessagesRead: (data: { senderId: string }) =>
     api.post("/message/markRead", data),
 
+  // ✅ 删除好友时清除双方的聊天记录（后端物理删除）
+  clearConversation: (data: { targetId: string }) =>
+    api.post("/message/clearConversation", data),
+
   uploadAvatar: async (formData: FormData) => {
     const res = await api.post("/message/uploadAvatar", formData, {
       headers: { "Content-Type": "multipart/form-data" },

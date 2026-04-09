@@ -33,3 +33,47 @@ export const saveActiveId = (id: string) => {
 export const loadActiveId = (): string => {
   return localStorage.getItem("chat_activeId") || "";
 };
+
+// ===== 备注管理（localStorage，key: contact_remarks）=====
+const REMARK_KEY = "contact_remarks";
+
+export const loadRemarks = (): Record<string, string> => {
+  try {
+    const raw = localStorage.getItem(REMARK_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveRemark = (userId: string, remark: string) => {
+  const map = loadRemarks();
+  if (remark) {
+    map[userId] = remark;
+  } else {
+    delete map[userId];
+  }
+  try {
+    localStorage.setItem(REMARK_KEY, JSON.stringify(map));
+  } catch {}
+};
+
+export const getRemark = (userId: string): string => {
+  return loadRemarks()[userId] || "";
+};
+
+/** 删除好友时同时清除其备注和本地消息 */
+export const clearContactData = (
+  userId: string,
+  messagesMap: Record<string, Message[]>
+): Record<string, Message[]> => {
+  // 清除备注
+  const remarks = loadRemarks();
+  delete remarks[userId];
+  try { localStorage.setItem(REMARK_KEY, JSON.stringify(remarks)); } catch {}
+
+  // 返回清除该联系人后的消息 map
+  const newMap = { ...messagesMap };
+  delete newMap[userId];
+  return newMap;
+};

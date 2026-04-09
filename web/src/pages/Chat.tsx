@@ -12,6 +12,9 @@ import {
   loadMessagesFromStorage,
   saveActiveId,
   loadActiveId,
+  saveRemark,
+  loadRemarks,
+  clearContactData,
 } from "../utils/chatUtils";
 import { useWebRTC } from "../hooks/useWebRTC";
 
@@ -23,6 +26,7 @@ import CallWindow from "../components/chat/CallWindow";
 import IncomingCallModal from "../components/chat/IncomingCallModal";
 import AddFriendModal from "../components/chat/AddFriendModal";
 import ProfileModal from "../components/chat/ProfileModal";
+import FriendProfileModal from "../components/chat/FriendProfileModal";
 import CreateGroupModal from "../components/chat/CreateGroupModal";
 import JoinGroupModal from "../components/chat/JoinGroupModal";
 import GroupMembersModal from "../components/chat/GroupMembersModal";
@@ -93,6 +97,14 @@ const Chat: React.FC = () => {
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
 
+  // ===== 备注 =====
+  const [remarks, setRemarks] = useState<Record<string, string>>(() => loadRemarks());
+
+  // ===== 好友资料弹窗 =====
+  const [friendProfile, setFriendProfile] = useState<{
+    uuid: string; nickname: string; email?: string; avatar?: string; remark?: string;
+  } | null>(null);
+
   // 好友申请自动弹窗控制：同一批次只弹一次
   const newApplyAutoShownRef = useRef(false);
   const showNewFriendRef = useRef(false);
@@ -112,6 +124,11 @@ const Chat: React.FC = () => {
   } = useWebRTC(wsRef, user?.uuid);
 
   const active = sessions.find((s) => s.id === activeId);
+
+  // ===== 备注 → 会话名显示（用备注替换真实昵称）=====
+  const sessionsWithRemark = sessions.map((s) =>
+    s.type === "user" && remarks[s.id] ? { ...s, name: remarks[s.id] } : s
+  );
 
   // ===== 加载群成员 =====
   const loadGroupMembers = useCallback(async () => {
@@ -623,7 +640,7 @@ const Chat: React.FC = () => {
         <Sidebar
           user={user}
           avatarVersion={avatarVersion}
-          sessions={sessions}
+          sessions={sessionsWithRemark}
           activeId={activeId}
           unreadCounts={unreadCounts}
           onlineUsers={onlineUsers}
@@ -681,6 +698,14 @@ const Chat: React.FC = () => {
           hasMore={hasMore}
           onLoadMore={handleLoadMore}
           onRecall={handleRecall}
+          onAvatarClick={(sendId, sendName, sendAvatar) => {
+            setFriendProfile({
+              uuid: sendId,
+              nickname: sendName || sendId,
+              avatar: sendAvatar,
+              remark: remarks[sendId],
+            });
+          }}
         />
 
         <ChatInput
@@ -770,6 +795,35 @@ const Chat: React.FC = () => {
         open={showNewFriend}
         onClose={() => setShowNewFriend(false)}
         onRefreshContacts={loadContacts}
+      />
+
+      {/* ===== 好友资料弹窗 ===== */}
+      <FriendProfileModal
+        open={!!friendProfile}
+        friend={friendProfile}
+        avatarVersion={avatarVersion}
+        onClose={() => setFriendProfile(null)}
+        onRemarkSaved={(friendId, remark) => {
+          saveRemark(friendId, remark);
+          setRemarks(loadRemarks());
+          setFriendProfile((prev) => prev ? { ...prev, remark } : null);
+        }}
+        onDeleteFriend={async (friendId) => {
+          try {
+            await api.deleteContact({ userId: friendId });
+            // 尝试清除服务端消息（接口可能不存在时静默失败）
+            await api.clearConversation({ targetId: friendId }).catch(() => {});
+          } catch {}
+          // 清除本地数据
+          const newMap = clearContactData(friendId, messagesMap);
+          setMessagesMap(newMap);
+          saveMessagesToStorage(newMap);
+          setRemarks(loadRemarks());
+          // 从会话列表移除
+          setSessions((prev) => prev.filter((s) => s.id !== friendId));
+          if (activeId === friendId) setActiveId("");
+          setFriendProfile(null);
+        }}
       />
     </div>
   );

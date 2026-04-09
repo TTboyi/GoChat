@@ -5,7 +5,8 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
+  /* ✅ 强制始终深色模式，防止移动端亮色系统主题覆盖 button 背景 */
+  color-scheme: dark;
   color: rgba(255, 255, 255, 0.87);
   background-color: #242424;
 
@@ -15,7 +16,13 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* ✅ 移除 light mode 媒体查询：App 始终使用深色主题，不跟随系统 */
 
+/* ✅ 防止 iOS Safari 自动调整字体大小 */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 body {
   margin: 0;
@@ -25,11 +32,6 @@ body {
   min-height: 100vh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
 button {
   border-radius: 8px;
   border: 1px solid transparent;
@@ -37,44 +39,22 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
+  background-color: transparent;
   cursor: pointer;
   transition: border-color 0.25s;
-  /* ✅ 移动端：禁用 iOS/Android 点击高亮和长按菜单 */
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   touch-action: manipulation;
-}
-button:hover {
-  border-color: #646cff;
 }
 button:focus,
 button:focus-visible {
   outline: 4px auto -webkit-focus-ring-color;
 }
 
-/* ✅ 移动端全局重置：禁用所有可交互元素的点击高亮 */
+/* ✅ 移动端全局重置 */
 a, button, input, textarea, select, [role="button"] {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
-}
-
-/* ✅ 防止 iOS Safari 自动调整字体大小 */
-html {
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
 }
 
 @keyframes fadeIn {
