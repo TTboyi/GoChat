@@ -736,6 +736,7 @@ const Chat: React.FC = () => {
           input={input}
           activeId={activeId}
           active={active}
+          isDark={isDark}
           onChange={setInput}
           onKeyDown={onKeyDown}
           onSend={doSend}

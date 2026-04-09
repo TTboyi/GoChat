@@ -233,8 +233,12 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
                 className={cn(
                   "max-w-[60%] rounded-2xl text-sm shadow-sm",
                   isSelf
-                    ? "bg-[#95ec69] text-black rounded-br-sm"
-                    : "bg-white text-gray-900 rounded-bl-sm"
+                    ? isDark
+                      ? "bg-[#1e5e30] text-gray-100 rounded-br-sm"
+                      : "bg-[#95ec69] text-black rounded-br-sm"
+                    : isDark
+                      ? "bg-[#3a3b3d] text-gray-100 rounded-bl-sm"
+                      : "bg-white text-gray-900 rounded-bl-sm"
                 )}
               >
                 {/* 文件消息（非图片） */}

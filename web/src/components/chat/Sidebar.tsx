@@ -73,7 +73,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   const dropItem = isDark ? "hover:bg-white/10 text-gray-200" : "hover:bg-gray-100 text-gray-700";
   const dotBorder= isDark ? "border-[#2e2e2e]" : "border-gray-50";
   const avatarFallbackBg = isDark ? "bg-white/20" : "bg-gray-300";
-  const toggleBg = isDark ? "bg-white/10 hover:bg-white/20 text-yellow-300" : "bg-gray-200 hover:bg-gray-300 text-indigo-500";
+  // ✅ 切换按钮：使用实色背景 + 边框，确保始终清晰可见
+  const toggleBg = isDark
+    ? "bg-amber-500/25 border border-amber-400/60 text-amber-300 hover:bg-amber-500/40"
+    : "bg-indigo-100 border border-indigo-300 text-indigo-600 hover:bg-indigo-200";
 
   return (
     <aside className={`w-full md:w-[260px] ${bg} ${textMain} flex flex-col border-r ${border} h-full`}>

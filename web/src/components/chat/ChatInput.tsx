@@ -9,8 +9,7 @@ const PhoneIcon = () => (
 
 const VideoIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-[18px] h-[18px]">
-    <polygon points="23 7 16 12 23 17 23 7"/>
-    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+    <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
   </svg>
 );
 
@@ -36,6 +35,7 @@ interface ChatInputProps {
   input: string;
   activeId: string;
   active: SessionItem | undefined;
+  isDark?: boolean;
   onChange: (value: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onSend: () => void;
@@ -48,6 +48,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   input,
   activeId,
   active,
+  isDark = true,
   onChange,
   onKeyDown,
   onSend,
@@ -65,33 +66,47 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  const toolBtn = "p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition flex items-center justify-center";
   const disabled = !activeId;
 
+  // ===== 主题色 token =====
+  const wrapBg     = isDark ? "bg-[#252525] border-black/25" : "bg-white border-gray-200";
+  const toolIcon   = isDark
+    ? "p-1 rounded text-gray-400 hover:text-gray-200 hover:bg-white/10 transition flex items-center justify-center bg-transparent border-none"
+    : "p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition flex items-center justify-center bg-transparent border-none";
+  const divider    = isDark ? "bg-white/15" : "bg-gray-200";
+  const innerBg    = isDark
+    ? "border border-white/10 rounded-xl bg-[#1a1a1a] focus-within:border-white/25 transition overflow-hidden"
+    : "border border-gray-300 rounded-xl bg-white focus-within:border-gray-400 transition overflow-hidden";
+  const textareaClass = isDark
+    ? "w-full resize-none outline-none px-3 pt-2.5 pb-8 text-sm text-gray-100 bg-transparent placeholder-gray-600"
+    : "w-full resize-none outline-none px-3 pt-2.5 pb-8 text-sm text-gray-800 bg-transparent placeholder-gray-400";
+  const sendDisabled  = isDark ? "bg-white/10 text-gray-600 cursor-not-allowed" : "bg-gray-100 text-gray-400 cursor-not-allowed";
+  const sendActive    = "bg-[#07c160] text-white hover:bg-green-500 shadow-sm";
+
   return (
-    <div className="border-t border-gray-200 bg-white">
+    <div className={`border-t ${wrapBg}`}>
       {/* 紧凑工具栏 */}
       {activeId && (
         <div className="flex items-center px-4 pt-1.5 pb-0.5 gap-0.5">
           {/* 文件上传 */}
-          <button className={toolBtn} title="发送文件" onClick={() => fileInputRef.current?.click()}>
+          <button className={toolIcon} title="发送文件" onClick={() => fileInputRef.current?.click()}>
             <FileIcon />
           </button>
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
 
           {/* 历史搜索 */}
-          <button className={toolBtn} title="搜索历史消息" onClick={onOpenSearch}>
+          <button className={toolIcon} title="搜索历史消息" onClick={onOpenSearch}>
             <SearchIcon />
           </button>
 
           {/* 通话（仅单聊） */}
           {active?.type === "user" && onStartCall && (
             <>
-              <div className="w-px h-4 bg-gray-200 mx-0.5" />
-              <button className={toolBtn} title="语音通话" onClick={() => onStartCall("audio")}>
+              <div className={`w-px h-4 ${divider} mx-0.5`} />
+              <button className={toolIcon} title="语音通话" onClick={() => onStartCall("audio")}>
                 <PhoneIcon />
               </button>
-              <button className={toolBtn} title="视频通话" onClick={() => onStartCall("video")}>
+              <button className={toolIcon} title="视频通话" onClick={() => onStartCall("video")}>
                 <VideoIcon />
               </button>
             </>
@@ -99,11 +114,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       )}
 
-      {/* 输入框（发送按钮融合在右下角） */}
+      {/* 输入区域 */}
       <div className="px-4 py-2">
-        <div className="relative border border-gray-300 rounded-xl bg-white focus-within:border-gray-400 transition overflow-hidden">
+        <div className={`relative ${innerBg}`}>
           <textarea
-            className="w-full resize-none outline-none px-3 pt-2.5 pb-8 text-sm text-gray-800 bg-transparent"
+            className={textareaClass}
             style={{ minHeight: 72, maxHeight: 140 }}
             placeholder={disabled ? "请选择左侧会话" : "输入消息…  Enter 发送，Shift+Enter 换行"}
             value={input}
@@ -116,10 +131,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             onClick={onSend}
             disabled={disabled || !input.trim()}
             className={
-              "absolute bottom-2 right-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition " +
-              (disabled || !input.trim()
-                ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                : "bg-[#07c160] text-white hover:bg-green-500 shadow-sm")
+              "absolute bottom-2 right-2 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition border-none " +
+              (disabled || !input.trim() ? sendDisabled : sendActive)
             }
           >
             <SendIcon />
