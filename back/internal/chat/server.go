@@ -104,30 +104,16 @@ func (s *Server) Run() {
 			msg := fmt.Sprintf("欢迎用户 %s 加入聊天室", client.Uuid)
 			client.SendBack <- []byte(msg)
 
-		// 客户端退出
+		// 客户端退出（WebSocket 断开）
 		case client := <-s.Logout:
-			s.Mutex.Lock()
-			delete(s.Clients, client.Uuid)
-			s.Mutex.Unlock()
+			s.RemoveClient(client.Uuid)
+			log.Printf("🔴 用户 %s WebSocket 断开\n", client.Uuid)
 
-			log.Printf("用户 %s 退出\n", client.Uuid)
-			_ = client.Conn.Close()
-
-			// 收到消息
+		// 收到消息
 		case env := <-s.Transmit:
 			// 统一走路由 + 入库 + 下发（点对点/群聊都在这里处理）
 			if err := s.routeAndPersist(env); err != nil {
 				log.Printf("❌ routeAndPersist 失败: %v", err)
-			}
-
-		case env := <-s.Transmit:
-			// ✅ 系统消息不入库，直接广播
-			if env.Type == 99 {
-				raw, _ := json.Marshal(env)
-				for userId := range s.Clients {
-					s.deliverToUser(userId, raw)
-				}
-				continue
 			}
 
 		}

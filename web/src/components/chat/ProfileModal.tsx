@@ -5,7 +5,7 @@ import { toAbs } from "../../utils/chatUtils";
 interface ProfileModalProps {
   open: boolean;
   onClose: () => void;
-  user: { nickname?: string; email?: string; avatar?: string } | null;
+  user: { uuid?: string; nickname?: string; email?: string; avatar?: string } | null;
   avatarVersion: number;
   onRefreshUser: () => Promise<void>;
   onAvatarUpdated: () => void;
@@ -112,6 +112,14 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
         </div>
 
         <form onSubmit={handleSave} className="space-y-4">
+          {user?.uuid && (
+            <div>
+              <label className="text-sm text-gray-600">用户 ID</label>
+              <div className="w-full border border-gray-200 rounded-lg px-3 py-2 mt-1 bg-gray-50 text-gray-500 text-sm font-mono select-all break-all">
+                {user.uuid}
+              </div>
+            </div>
+          )}
           <div>
             <label className="text-sm text-gray-600">昵称</label>
             <input

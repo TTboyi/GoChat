@@ -11,7 +11,6 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const token =  getToken();  
 
   if (!token) {
-    alert("请先登录！");
     return <Navigate to="/" replace />;
   }
 

@@ -12,12 +12,23 @@ const IDLE_CALL_STATE: CallState = {
   isCaller: false,
 };
 
+export interface IncomingCall {
+  callId: string;
+  from: string;
+  fromName?: string;
+  callType: "audio" | "video";
+  offer: string; // JSON stringified RTCSessionDescriptionInit
+}
+
 export function useWebRTC(
   wsRef: RefObject<ChatWebSocket | null>,
   userId: string | undefined
 ) {
   const [callState, setCallState] = useState<CallState>(IDLE_CALL_STATE);
   const callStateRef = useRef<CallState>(IDLE_CALL_STATE);
+
+  // 待接听的来电
+  const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -28,6 +39,22 @@ export function useWebRTC(
   useEffect(() => {
     callStateRef.current = callState;
   }, [callState]);
+
+  // ✅ 当 callState 变为非 idle 时，将本地流挂载到 video 元素
+  useEffect(() => {
+    if (callState.status === "idle") return;
+    if (!localStreamRef.current) return;
+
+    const tryAttach = () => {
+      if (localVideoRef.current && localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+    };
+    tryAttach();
+    // 等 DOM 更新完毕后再试一次
+    const t = setTimeout(tryAttach, 80);
+    return () => clearTimeout(t);
+  }, [callState.status]);
 
   const cleanupCall = useCallback(() => {
     setCallState(IDLE_CALL_STATE);
@@ -49,13 +76,6 @@ export function useWebRTC(
       if (!ws || !active?.id) return;
 
       const callId = Date.now().toString();
-      setCallState({
-        callId,
-        peerId: active.id,
-        status: "ringing",
-        callType,
-        isCaller: true,
-      });
 
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
@@ -87,9 +107,15 @@ export function useWebRTC(
       }
 
       localStreamRef.current = stream;
-      if (localVideoRef.current && callType === "video") {
-        localVideoRef.current.srcObject = stream;
-      }
+
+      // 先设置状态（触发 CallWindow 渲染 + useEffect 挂载 stream）
+      setCallState({
+        callId,
+        peerId: active.id,
+        status: "ringing",
+        callType,
+        isCaller: true,
+      });
 
       const pc = new RTCPeerConnection({
         iceServers: [
@@ -133,15 +159,106 @@ export function useWebRTC(
         callId,
         content: JSON.stringify(offer),
       });
-
-      alert(
-        `📞 正在呼叫 ${active.name}（${
-          callType === "video" ? "视频" : "语音"
-        }通话）`
-      );
     },
     [wsRef]
   );
+
+  // ✅ 主叫取消呼叫 / 通话结束
+  const endCall = useCallback(() => {
+    const ws = wsRef.current;
+    const { peerId, callId } = callStateRef.current;
+    if (ws && peerId && callId) {
+      callEnd(ws, peerId, callId);
+    }
+    cleanupCall();
+  }, [wsRef, cleanupCall]);
+
+  // ✅ 接受来电
+  const acceptIncomingCall = useCallback(async () => {
+    const pending = incomingCall;
+    if (!pending) return;
+    const socket = wsRef.current;
+    if (!socket) return;
+
+    setIncomingCall(null);
+
+    const { callId, from, callType, offer: offerStr } = pending;
+
+    setCallState({
+      callId,
+      peerId: from,
+      status: "in-call",
+      callType,
+      isCaller: false,
+    });
+
+    let stream: MediaStream;
+    try {
+      const constraints =
+        callType === "video" ? { video: true, audio: true } : { audio: true };
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+    } catch {
+      alert("无法访问摄像头/麦克风");
+      socket.send({ action: "call_answer", receiveId: from, callId, accept: false });
+      cleanupCall();
+      return;
+    }
+
+    localStreamRef.current = stream;
+
+    const pc2 = new RTCPeerConnection({
+      iceServers: [
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
+      ],
+    });
+    peerRef.current = pc2;
+    stream.getTracks().forEach((t) => pc2.addTrack(t, stream));
+
+    pc2.ontrack = (event) => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    pc2.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.send({
+          action: "call_candidate",
+          receiveId: from,
+          callId,
+          content: JSON.stringify(event.candidate),
+        });
+      }
+    };
+
+    const remoteOffer = JSON.parse(offerStr);
+    await pc2.setRemoteDescription(new RTCSessionDescription(remoteOffer));
+    const answer = await pc2.createAnswer();
+    await pc2.setLocalDescription(answer);
+
+    socket.send({
+      action: "call_answer",
+      receiveId: from,
+      callId,
+      accept: true,
+      content: JSON.stringify(answer),
+    });
+  }, [incomingCall, wsRef, cleanupCall]);
+
+  // ✅ 拒绝来电
+  const rejectIncomingCall = useCallback(() => {
+    const pending = incomingCall;
+    if (!pending) return;
+    const socket = wsRef.current;
+    socket?.send({
+      action: "call_answer",
+      receiveId: pending.from,
+      callId: pending.callId,
+      accept: false,
+    });
+    setIncomingCall(null);
+  }, [incomingCall, wsRef]);
 
   const handleCallSignal = useCallback(
     async (msg: any) => {
@@ -155,6 +272,7 @@ export function useWebRTC(
         case "call_invite": {
           if (from === me) return;
           if (callStateRef.current.status !== "idle") {
+            // 忙线，自动拒绝
             socket?.send({
               action: "call_answer",
               receiveId: from,
@@ -163,77 +281,12 @@ export function useWebRTC(
             });
             return;
           }
-          const ok = window.confirm(
-            `📞 ${from} 发起${
-              callType === "video" ? "视频" : "语音"
-            }通话，是否接听？`
-          );
-          if (!ok) {
-            socket?.send({
-              action: "call_answer",
-              receiveId: from,
-              callId,
-              accept: false,
-            });
-            return;
-          }
-
-          setCallState({
+          // ✅ 使用状态而非 confirm 阻塞
+          setIncomingCall({
             callId,
-            peerId: from,
-            status: "in-call",
+            from,
             callType,
-            isCaller: false,
-          });
-
-          const constraints =
-            callType === "video"
-              ? { video: true, audio: true }
-              : { audio: true };
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          localStreamRef.current = stream;
-          if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-
-          const pc2 = new RTCPeerConnection({
-            iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-          });
-          peerRef.current = pc2;
-          stream.getTracks().forEach((t) => pc2.addTrack(t, stream));
-
-          pc2.ontrack = (event) => {
-            if (remoteVideoRef.current) {
-              remoteVideoRef.current.srcObject = event.streams[0];
-            }
-          };
-
-          pc2.onicecandidate = (event) => {
-            if (event.candidate) {
-              socket?.send({
-                action: "call_candidate",
-                receiveId: from,
-                callId,
-                content: JSON.stringify(event.candidate),
-              });
-            }
-          };
-
-          if (!content) {
-            console.warn("⚠️ call_invite 没带 offer content");
-            return;
-          }
-          const remoteOffer = JSON.parse(content);
-          await pc2.setRemoteDescription(
-            new RTCSessionDescription(remoteOffer)
-          );
-          const answer = await pc2.createAnswer();
-          await pc2.setLocalDescription(answer);
-
-          socket?.send({
-            action: "call_answer",
-            receiveId: from,
-            callId,
-            accept: true,
-            content: JSON.stringify(answer),
+            offer: content || "",
           });
           break;
         }
@@ -241,8 +294,9 @@ export function useWebRTC(
         case "call_answer": {
           if (from === me) return;
           if (accept === false) {
-            alert("🚫 对方拒绝通话");
+            setCallState(IDLE_CALL_STATE);
             cleanupCall();
+            alert("🚫 对方拒绝通话");
             return;
           }
           setCallState((prev) =>
@@ -278,7 +332,7 @@ export function useWebRTC(
         }
 
         case "call_end": {
-          alert("📴 通话结束");
+          setIncomingCall(null);
           cleanupCall();
           break;
         }
@@ -287,21 +341,15 @@ export function useWebRTC(
     [wsRef, userId, cleanupCall]
   );
 
-  const endCall = useCallback(() => {
-    const ws = wsRef.current;
-    const { peerId, callId } = callStateRef.current;
-    if (ws && peerId && callId) {
-      callEnd(ws, peerId, callId);
-    }
-    cleanupCall();
-  }, [wsRef, cleanupCall]);
-
   return {
     callState,
+    incomingCall,
     localVideoRef,
     remoteVideoRef,
     startCall,
     handleCallSignal,
     endCall,
+    acceptIncomingCall,
+    rejectIncomingCall,
   };
 }

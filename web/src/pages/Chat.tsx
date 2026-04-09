@@ -20,6 +20,7 @@ import ChatHeader from "../components/chat/ChatHeader";
 import ChatMessages from "../components/chat/ChatMessages";
 import ChatInput from "../components/chat/ChatInput";
 import CallWindow from "../components/chat/CallWindow";
+import IncomingCallModal from "../components/chat/IncomingCallModal";
 import AddFriendModal from "../components/chat/AddFriendModal";
 import ProfileModal from "../components/chat/ProfileModal";
 import CreateGroupModal from "../components/chat/CreateGroupModal";
@@ -34,6 +35,9 @@ const PAGE_SIZE = 50;
 const Chat: React.FC = () => {
   const { user, refreshUser, logout } = useAuth();
 
+  // ===== 移动端视图控制 =====
+  const [mobileView, setMobileView] = useState<"sidebar" | "chat">("sidebar");
+
   // ===== 会话状态 =====
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [activeId, setActiveId] = useState<string>(loadActiveId());
@@ -41,7 +45,6 @@ const Chat: React.FC = () => {
   const [groupIdSet, setGroupIdSet] = useState<Set<string>>(new Set());
   const [myGroups, setMyGroups] = useState<GroupInfo[]>([]);
 
-  // 持久化 activeId 到 localStorage
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
 
   // ===== 消息状态 =====
@@ -57,7 +60,6 @@ const Chat: React.FC = () => {
   // ===== 在线状态 =====
   const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
 
-  // activeId ref（避免 stale closure 问题）
   const activeIdRef = useRef<string>("");
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
@@ -82,8 +84,17 @@ const Chat: React.FC = () => {
   const [showSearch, setShowSearch] = useState(false);
 
   // ===== WebRTC =====
-  const { callState, localVideoRef, remoteVideoRef, startCall, handleCallSignal, endCall } =
-    useWebRTC(wsRef, user?.uuid);
+  const {
+    callState,
+    incomingCall,
+    localVideoRef,
+    remoteVideoRef,
+    startCall,
+    handleCallSignal,
+    endCall,
+    acceptIncomingCall,
+    rejectIncomingCall,
+  } = useWebRTC(wsRef, user?.uuid);
 
   const active = sessions.find((s) => s.id === activeId);
 
@@ -117,13 +128,13 @@ const Chat: React.FC = () => {
       uuid: m.uuid ?? m.Uuid,
       sendId: m.sendId ?? m.SendId ?? "",
       receiveId: m.receiveId ?? m.ReceiveId ?? "",
-      content: (m.isRecalled || m.IsRecalled) ? "" : (m.content ?? m.Content ?? ""),
+      content: (m.isRecalled || m.IsRecalled) ? "" : (m.content ?? m.Content ?? m.url ?? m.Url ?? ""),
       type: m.type ?? m.Type ?? 0,
       createdAt:
         typeof m.createdAt === "number"
           ? m.createdAt
-          : m.CreatedAt
-          ? Math.floor(Date.parse(m.CreatedAt) / 1000)
+          : (m.createdAt || m.CreatedAt)
+          ? Math.floor(Date.parse(m.createdAt || m.CreatedAt) / 1000)
           : Math.floor(Date.now() / 1000),
       sendName: m.sendName ?? m.SendName ?? "",
       sendAvatar: m.sendAvatar ?? m.SendAvatar ?? "",
@@ -131,7 +142,7 @@ const Chat: React.FC = () => {
       fileName: m.fileName ?? m.FileName ?? "",
       fileType: m.fileType ?? m.FileType ?? "",
       fileSize: m.fileSize ?? m.FileSize ?? "",
-      isRecalled: !!(m.isRecalled || m.IsRecalled),
+      isRecalled: !!(m.isRecalled || m.IsRecalled || false),
       readAt: m.readAt ?? m.ReadAt ?? null,
     }));
 
@@ -157,7 +168,7 @@ const Chat: React.FC = () => {
         }
         const raw = (res.data?.data || res.data || []) as any[];
         const arr = parseMessages(raw);
-        arr.reverse(); // 后端 DESC → 前端 ASC
+        arr.reverse();
 
         setHasMoreMap((prev) => ({ ...prev, [sessionId]: arr.length === PAGE_SIZE }));
 
@@ -180,9 +191,7 @@ const Chat: React.FC = () => {
           }
         });
 
-        // 首次加载后标记已读（单聊）
         if (!isLoadMore && currentActive.type === "user" && user?.uuid) {
-          // 立即在本地标记为已读（即时性）
           setMessagesMap((prev) => {
             const list = prev[sessionId] || [];
             const updated = list.map((m) =>
@@ -197,9 +206,7 @@ const Chat: React.FC = () => {
           api.markMessagesRead({ senderId: currentActive.id }).catch(() => {});
         }
 
-        // 首次加载：直接跳到底部
         if (!isLoadMore) {
-          // 等 DOM 更新完毕后跳底部（用 setTimeout 0）
           setTimeout(() => scrollToBottom(false), 0);
         }
       } catch (e) {
@@ -219,7 +226,6 @@ const Chat: React.FC = () => {
 
       const anyMsg = msg as any;
 
-      // 在线状态事件
       if (anyMsg.action === "online_users" && Array.isArray(anyMsg.userIds)) {
         setOnlineUsers(new Set(anyMsg.userIds as string[]));
         return;
@@ -237,7 +243,6 @@ const Chat: React.FC = () => {
         return;
       }
 
-      // 群解散
       if (anyMsg.action === "group_dismissed" && anyMsg.groupId) {
         const gid = String(anyMsg.groupId);
         setSessions((prev) => prev.filter((s) => s.id !== gid));
@@ -247,7 +252,6 @@ const Chat: React.FC = () => {
         return;
       }
 
-      // 新成员加入
       if (anyMsg.action === "group_join" && anyMsg.groupId) {
         if (anyMsg.member_cnt !== undefined) {
           setMyGroups((prev) => prev.map((g) => g.uuid === anyMsg.groupId ? { ...g, member_cnt: anyMsg.member_cnt } : g));
@@ -256,7 +260,6 @@ const Chat: React.FC = () => {
         return;
       }
 
-      // 退群
       if (anyMsg.action === "group_quit" && anyMsg.groupId) {
         const gid = String(anyMsg.groupId);
         if (anyMsg.userId === user?.uuid) {
@@ -270,7 +273,6 @@ const Chat: React.FC = () => {
         return;
       }
 
-      // 消息撤回
       if (anyMsg.action === "msg_recall" && anyMsg.msgId) {
         setMessagesMap((prev) => {
           const updated = { ...prev };
@@ -290,7 +292,6 @@ const Chat: React.FC = () => {
         return;
       }
 
-      // 已读通知（发送方收到：消息被读了）
       if (anyMsg.action === "msg_read" && anyMsg.receiverId) {
         const readerId = String(anyMsg.receiverId);
         setMessagesMap((prev) => {
@@ -308,7 +309,6 @@ const Chat: React.FC = () => {
         return;
       }
 
-      // 普通消息
       const newMsg: Message = {
         uuid: anyMsg.uuid,
         sendId: anyMsg.sendId ?? "",
@@ -344,14 +344,12 @@ const Chat: React.FC = () => {
         return next;
       });
 
-      // 未读计数：排除自己发的、排除当前活跃会话中对方发的
       const isMine = anyMsg.sendId === user?.uuid;
       const isCurrentSession = bucketId === activeIdRef.current;
       if (!isMine && !isCurrentSession) {
         setUnreadCounts((prev) => ({ ...prev, [bucketId]: (prev[bucketId] || 0) + 1 }));
       }
 
-      // 若当前会话有新消息，且是对方发的，立即标记已读
       if (!isGroupMsg && isCurrentSession && !isMine) {
         setMessagesMap((prev) => {
           const list = prev[bucketId] || [];
@@ -365,12 +363,11 @@ const Chat: React.FC = () => {
         api.markMessagesRead({ senderId: anyMsg.sendId }).catch(() => {});
       }
 
-      // 新消息到达当前会话，平滑滚到底部
       if (isCurrentSession) {
         setTimeout(() => scrollToBottom(true), 50);
       }
     },
-    [groupIdSet, sessionIndex, user?.uuid, loadGroupMembers, handleCallSignal, scrollToBottom]
+    [groupIdSet, sessionIndex, user?.uuid, loadGroupMembers, handleCallSignal, scrollToBottom, activeId]
   );
 
   // ===== 加载联系人/群聊 =====
@@ -417,7 +414,6 @@ const Chat: React.FC = () => {
       setSessionIndex(idx);
       setGroupIdSet(new Set(groups.map((g) => g.id)));
 
-      // 首次加载：恢复上次的会话，若没有则选第一个
       setActiveId((prev) => {
         if (prev && unique.find((s) => s.id === prev)) return prev;
         return unique[0]?.id || "";
@@ -470,6 +466,7 @@ const Chat: React.FC = () => {
   const handleSelectSession = useCallback((id: string) => {
     setActiveId(id);
     setUnreadCounts((prev) => ({ ...prev, [id]: 0 }));
+    setMobileView("chat");
   }, []);
 
   // ===== 加载更多历史消息 =====
@@ -493,7 +490,6 @@ const Chat: React.FC = () => {
     if (!user) refreshUser();
   }, []);
 
-  // 切换会话时：加载消息、拉群信息
   useEffect(() => {
     if (!activeId || sessions.length === 0) return;
     if (lastActiveId.current === activeId) return;
@@ -517,7 +513,6 @@ const Chat: React.FC = () => {
     }
   }, [activeId, sessions.length]);
 
-  // WebSocket 连接
   useEffect(() => {
     const token = getToken();
     if (!token) return;
@@ -535,6 +530,11 @@ const Chat: React.FC = () => {
   }, [myGroups]);
 
   const handleLogout = () => {
+    // 先关闭 WebSocket，让后端触发 user_offline 广播
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
     localStorage.removeItem("chat_messages");
     localStorage.removeItem("chat_activeId");
     logout();
@@ -545,23 +545,53 @@ const Chat: React.FC = () => {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#ededed] flex">
-      <Sidebar
-        user={user}
-        avatarVersion={avatarVersion}
-        sessions={sessions}
-        activeId={activeId}
-        unreadCounts={unreadCounts}
-        onlineUsers={onlineUsers}
-        onSelectSession={handleSelectSession}
-        onShowProfile={() => setShowProfile(true)}
-        onLogout={handleLogout}
-        onShowNewFriend={() => setShowNewFriend(true)}
-        onShowAddFriend={() => setShowAddFriend(true)}
-        onShowCreateGroup={() => setShowCreateGroup(true)}
-        onShowJoinGroup={() => setShowJoinGroup(true)}
-      />
+      {/* ===== Sidebar ===== */}
+      {/* 桌面：固定宽度；移动端：仅在 sidebar 视图显示，占满全屏 */}
+      <div
+        className={[
+          "md:flex md:w-[260px] md:flex-shrink-0",
+          mobileView === "chat" ? "hidden" : "flex flex-1 flex-col",
+        ].join(" ")}
+      >
+        <Sidebar
+          user={user}
+          avatarVersion={avatarVersion}
+          sessions={sessions}
+          activeId={activeId}
+          unreadCounts={unreadCounts}
+          onlineUsers={onlineUsers}
+          onSelectSession={handleSelectSession}
+          onShowProfile={() => setShowProfile(true)}
+          onLogout={handleLogout}
+          onShowNewFriend={() => setShowNewFriend(true)}
+          onShowAddFriend={() => setShowAddFriend(true)}
+          onShowCreateGroup={() => setShowCreateGroup(true)}
+          onShowJoinGroup={() => setShowJoinGroup(true)}
+        />
+      </div>
 
-      <main className="flex-1 flex flex-col bg-[#f5f5f5] min-w-0">
+      {/* ===== 主聊天区域 ===== */}
+      {/* 桌面：flex-1；移动端：仅在 chat 视图显示，占满全屏 */}
+      <main
+        className={[
+          "flex-col bg-[#f5f5f5] min-w-0 md:flex md:flex-1",
+          mobileView === "sidebar" ? "hidden" : "flex flex-1",
+        ].join(" ")}
+      >
+        {/* 移动端顶部返回栏 */}
+        <div className="md:hidden flex items-center h-11 px-3 bg-[#ededed] border-b border-black/10 flex-shrink-0">
+          <button
+            onClick={() => setMobileView("sidebar")}
+            className="flex items-center gap-1 text-blue-500 text-sm py-1 px-1 -ml-1"
+          >
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            返回
+          </button>
+          <span className="mx-auto font-semibold text-sm truncate pr-10">{active?.name || ""}</span>
+        </div>
+
         <ChatHeader
           active={active}
           avatarVersion={avatarVersion}
@@ -604,7 +634,16 @@ const Chat: React.FC = () => {
         />
       </main>
 
-      {/* Modals */}
+      {/* ===== 来电提示 ===== */}
+      {incomingCall && (
+        <IncomingCallModal
+          call={incomingCall}
+          onAccept={acceptIncomingCall}
+          onReject={rejectIncomingCall}
+        />
+      )}
+
+      {/* ===== Modals ===== */}
       <AddFriendModal open={showAddFriend} onClose={() => setShowAddFriend(false)} />
 
       <ProfileModal
@@ -623,6 +662,7 @@ const Chat: React.FC = () => {
         onCreated={async (groupUUID) => {
           await loadContacts();
           setActiveId(groupUUID);
+          setMobileView("chat");
         }}
       />
 
