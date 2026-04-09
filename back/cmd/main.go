@@ -63,7 +63,10 @@ func main() {
 	// 3) 先启动 WebSocket Hub（用 goroutine，因为它是个死循环）
 	// go chat.ChatServer.Run()
 
-	// 4) 再启动 HTTP（阻塞）
+	// 4) 启动过期文件清理
+	chat.StartFileCleanup(config.GetConfig().StaticFilePath)
+
+	// 5) 再启动 HTTP（阻塞）
 	r := router.InitRouter() // 内部用 utils.GetJWT() 取全局 jwt
 	if err := r.Run(":8000"); err != nil {
 		log.Fatal("HTTP 启动失败: ", err)

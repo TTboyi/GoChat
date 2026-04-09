@@ -20,10 +20,12 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
   onAvatarUpdated,
 }) => {
   const [form, setForm] = useState({ nickname: "", email: "" });
+  const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   useEffect(() => {
     if (open && user) {
       setForm({ nickname: user.nickname ?? "", email: user.email ?? "" });
+      setStatus(null);
     }
   }, [open, user]);
 
@@ -39,12 +41,12 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
       if (res?.avatarUrl) {
         await onRefreshUser();
         onAvatarUpdated();
-        alert("头像更新成功！");
+        setStatus({ type: "success", msg: "头像更新成功" });
       } else {
-        alert("上传失败：服务端未返回 url");
+        setStatus({ type: "error", msg: "上传失败" });
       }
     } catch {
-      alert("头像上传失败");
+      setStatus({ type: "error", msg: "头像上传失败" });
     }
   };
 
@@ -57,13 +59,12 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
       });
       if (res.status === 200) {
         await onRefreshUser();
-        alert("更新成功！");
         onClose();
       } else {
-        alert("更新失败：" + (res.data?.error || res.statusText));
+        setStatus({ type: "error", msg: "更新失败：" + (res.data?.error || res.statusText) });
       }
     } catch {
-      alert("更新资料失败");
+      setStatus({ type: "error", msg: "更新资料失败" });
     }
   };
 
@@ -138,6 +139,11 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
                focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-900"
             />
           </div>
+          {status && (
+            <div className={`text-sm px-3 py-1.5 rounded-lg ${status.type === "success" ? "bg-green-50 text-green-600" : "bg-red-50 text-red-500"}`}>
+              {status.msg}
+            </div>
+          )}
           <div className="flex justify-end space-x-3 mt-4">
             <button
               type="button"

@@ -31,12 +31,20 @@ import SearchHistoryModal from "../components/chat/SearchHistoryModal";
 import NewFriendModal from "../components/NewFriendModal";
 
 const PAGE_SIZE = 50;
+const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
 
 const Chat: React.FC = () => {
   const { user, refreshUser, logout } = useAuth();
 
-  // ===== 移动端视图控制 =====
+  // ===== 响应式：是否移动端 =====
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const [mobileView, setMobileView] = useState<"sidebar" | "chat">("sidebar");
+
+  useEffect(() => {
+    const update = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   // ===== 会话状态 =====
   const [sessions, setSessions] = useState<SessionItem[]>([]);
@@ -82,6 +90,11 @@ const Chat: React.FC = () => {
   const [showGroupMembers, setShowGroupMembers] = useState(false);
   const [showGroupInfo, setShowGroupInfo] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+
+  // 好友申请自动弹窗控制：同一批次只弹一次
+  const newApplyAutoShownRef = useRef(false);
+  const showNewFriendRef = useRef(false);
+  useEffect(() => { showNewFriendRef.current = showNewFriend; }, [showNewFriend]);
 
   // ===== WebRTC =====
   const {
@@ -142,7 +155,7 @@ const Chat: React.FC = () => {
       fileName: m.fileName ?? m.FileName ?? "",
       fileType: m.fileType ?? m.FileType ?? "",
       fileSize: m.fileSize ?? m.FileSize ?? "",
-      isRecalled: !!(m.isRecalled || m.IsRecalled || false),
+      isRecalled: !!(m.isRecalled || m.IsRecalled),
       readAt: m.readAt ?? m.ReadAt ?? null,
     }));
 
@@ -226,6 +239,7 @@ const Chat: React.FC = () => {
 
       const anyMsg = msg as any;
 
+      // 在线状态事件
       if (anyMsg.action === "online_users" && Array.isArray(anyMsg.userIds)) {
         setOnlineUsers(new Set(anyMsg.userIds as string[]));
         return;
@@ -240,6 +254,21 @@ const Chat: React.FC = () => {
           next.delete(anyMsg.userId as string);
           return next;
         });
+        return;
+      }
+
+      // ✅ 收到好友申请通知 - 仅在本批次未自动弹出过的情况下弹窗
+      if (anyMsg.action === "new_contact_apply") {
+        if (!newApplyAutoShownRef.current && !showNewFriendRef.current) {
+          newApplyAutoShownRef.current = true;
+          setShowNewFriend(true);
+        }
+        return;
+      }
+
+      // ✅ 好友申请被接受 - 刷新联系人列表
+      if (anyMsg.action === "contact_apply_accepted") {
+        loadContacts();
         return;
       }
 
@@ -438,17 +467,21 @@ const Chat: React.FC = () => {
     }
   };
 
-  // ===== 发送文件 =====
+  // ===== 发送文件（30MB 限制） =====
   const handleSendFile = async (file: File) => {
     if (!ws || !activeId) return;
+    if (file.size > MAX_FILE_SIZE) {
+      alert("文件大小不能超过 30MB");
+      return;
+    }
     try {
       const formData = new FormData();
       formData.append("file", file);
       const res = await api.uploadFile(formData);
       const fileUrl = res.data?.url || "";
       sendFileMessage(ws, fileUrl, activeId, file.name, file.type, String(file.size));
-    } catch (e) {
-      console.error("文件上传失败", e);
+    } catch (e: any) {
+      alert(e.response?.data?.error || "文件上传失败");
     }
   };
 
@@ -522,7 +555,7 @@ const Chat: React.FC = () => {
         myGroups.forEach((g) => socket.send({ action: "join_group", groupId: g.uuid }));
       },
       onMessage: handleIncomingMessage,
-      onClose: () => console.log("❌ WebSocket 已关闭"),
+      onClose: () => console.log("WebSocket 已关闭"),
     });
     setWs(socket);
     wsRef.current = socket;
@@ -530,7 +563,6 @@ const Chat: React.FC = () => {
   }, [myGroups]);
 
   const handleLogout = () => {
-    // 先关闭 WebSocket，让后端触发 user_offline 广播
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -540,18 +572,24 @@ const Chat: React.FC = () => {
     logout();
   };
 
+  // ===== 布局计算 =====
+  // 桌面：始终显示两栏；移动：按 mobileView 切换
+  const showSidebar = !isMobile || mobileView === "sidebar";
+  const showMain = !isMobile || mobileView === "chat";
+
   const viewMsgs = messagesMap[activeId] || [];
   const hasMore = hasMoreMap[activeId] || false;
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-[#ededed] flex">
       {/* ===== Sidebar ===== */}
-      {/* 桌面：固定宽度；移动端：仅在 sidebar 视图显示，占满全屏 */}
       <div
-        className={[
-          "md:flex md:w-[260px] md:flex-shrink-0",
-          mobileView === "chat" ? "hidden" : "flex flex-1 flex-col",
-        ].join(" ")}
+        style={{
+          display: showSidebar ? "flex" : "none",
+          width: isMobile ? "100%" : "260px",
+          flexShrink: 0,
+          flexDirection: "column",
+        }}
       >
         <Sidebar
           user={user}
@@ -563,7 +601,10 @@ const Chat: React.FC = () => {
           onSelectSession={handleSelectSession}
           onShowProfile={() => setShowProfile(true)}
           onLogout={handleLogout}
-          onShowNewFriend={() => setShowNewFriend(true)}
+          onShowNewFriend={() => {
+            newApplyAutoShownRef.current = false; // 手动打开重置标志
+            setShowNewFriend(true);
+          }}
           onShowAddFriend={() => setShowAddFriend(true)}
           onShowCreateGroup={() => setShowCreateGroup(true)}
           onShowJoinGroup={() => setShowJoinGroup(true)}
@@ -571,26 +612,25 @@ const Chat: React.FC = () => {
       </div>
 
       {/* ===== 主聊天区域 ===== */}
-      {/* 桌面：flex-1；移动端：仅在 chat 视图显示，占满全屏 */}
       <main
-        className={[
-          "flex-col bg-[#f5f5f5] min-w-0 md:flex md:flex-1",
-          mobileView === "sidebar" ? "hidden" : "flex flex-1",
-        ].join(" ")}
+        style={{ display: showMain ? "flex" : "none" }}
+        className="flex-1 flex-col bg-[#f5f5f5] min-w-0"
       >
         {/* 移动端顶部返回栏 */}
-        <div className="md:hidden flex items-center h-11 px-3 bg-[#ededed] border-b border-black/10 flex-shrink-0">
-          <button
-            onClick={() => setMobileView("sidebar")}
-            className="flex items-center gap-1 text-blue-500 text-sm py-1 px-1 -ml-1"
-          >
-            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            返回
-          </button>
-          <span className="mx-auto font-semibold text-sm truncate pr-10">{active?.name || ""}</span>
-        </div>
+        {isMobile && (
+          <div className="flex items-center h-11 px-3 bg-[#ededed] border-b border-black/10 flex-shrink-0">
+            <button
+              onClick={() => setMobileView("sidebar")}
+              className="flex items-center gap-1 text-blue-500 text-sm py-1 px-1 -ml-1"
+            >
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              返回
+            </button>
+            <span className="mx-auto font-semibold text-sm truncate pr-10">{active?.name || ""}</span>
+          </div>
+        )}
 
         <ChatHeader
           active={active}

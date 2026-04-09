@@ -1,8 +1,10 @@
 package v1
 
 import (
+	"chatapp/back/internal/chat"
 	"chatapp/back/internal/dto/req"
 	"chatapp/back/internal/service"
+	"encoding/json"
 	"net/http"
 
 	"fmt"
@@ -18,11 +20,22 @@ func ApplyContact(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
-	if err := service.ApplyContactByTarget(userId, form.Target, form.Message); err != nil {
-		fmt.Println("❌ 添加好友失败：", err) // ✅ 输出具体错误
+	targetUserId, err := service.ApplyContactByTarget(userId, form.Target, form.Message)
+	if err != nil {
+		fmt.Println("❌ 添加好友失败：", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// ✅ 通过 WebSocket 通知对方有新的好友申请
+	if targetUserId != "" {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"action": "new_contact_apply",
+			"from":   userId,
+		})
+		chat.ChatServer.DeliverToUser(targetUserId, payload)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "申请成功"})
 }
 
@@ -46,10 +59,21 @@ func HandleContactApply(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
-	if err := service.HandleContactApply(userId, &form); err != nil {
+	applicantId, err := service.HandleContactApply(userId, &form)
+	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// ✅ 如果是同意申请，通知申请方刷新联系人列表
+	if form.Approve && applicantId != "" {
+		payload, _ := json.Marshal(map[string]interface{}{
+			"action":    "contact_apply_accepted",
+			"acceptorId": userId,
+		})
+		chat.ChatServer.DeliverToUser(applicantId, payload)
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "处理成功"})
 }
 

@@ -37,8 +37,7 @@ type ChatMessageRequest struct {
 // Read 循环监听前端消息
 func (c *Client) Read() {
 	defer func() {
-		ChatServer.Logout <- c
-		_ = c.Conn.Close()
+		ChatServer.RemoveClient(c.Uuid)
 	}()
 
 	for {

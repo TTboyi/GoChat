@@ -87,6 +87,8 @@ func UploadImage(c *gin.Context) {
 	})
 }
 
+const maxFileSize = 30 * 1024 * 1024 // 30MB
+
 // 上传文件
 func UploadFile(c *gin.Context) {
 	userId := c.GetString("userId")
@@ -96,7 +98,13 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// 保留原始扩展名
+	// ✅ 30MB 大小限制
+	if file.Size > maxFileSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "文件大小不能超过 30MB"})
+		return
+	}
+
+	// 保留原始扩展名，文件名中包含上传时间戳（用于过期计算）
 	ext := filepath.Ext(file.Filename)
 	newFileName := fmt.Sprintf("file_%s_%d%s", userId, time.Now().Unix(), ext)
 	savePath := filepath.Join(config.GetConfig().StaticFilePath, newFileName)

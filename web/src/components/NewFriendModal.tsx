@@ -53,7 +53,6 @@ const NewFriendModal: React.FC<Props> = ({ open, onClose ,onRefreshContacts}) =>
       setList(items);
     } catch (err) {
       console.error("获取好友申请失败:", err);
-      alert("获取好友申请失败");
     } finally {
       setLoading(false);
     }
@@ -61,17 +60,13 @@ const NewFriendModal: React.FC<Props> = ({ open, onClose ,onRefreshContacts}) =>
 
   const handleApply = async (applyUuid: string, approve: boolean) => {
     try {
-      // 后端结构：{ apply_uuid, approve }
       await api.handleContactApply({ applyUuid: applyUuid, approve });
-      //setList((prev) => prev.filter((x) => x.uuid !== applyUuid));
-      alert(approve ? "已同意好友申请" : "已拒绝好友申请");
+      setList((prev) => prev.filter((x) => x.uuid !== applyUuid));
       if (approve && onRefreshContacts) {
         onRefreshContacts();
       }
-      
     } catch (err) {
       console.error("处理失败:", err);
-      alert("操作失败");
     }
   };
 

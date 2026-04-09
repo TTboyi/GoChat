@@ -236,7 +236,22 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
                 )}
               >
                 {/* 文件消息（非图片） */}
-                {m.type === 1 && !isImage ? (
+                {m.type === 1 && !isImage ? (() => {
+                  const ts = m.createdAt
+                    ? (typeof m.createdAt === "number" ? m.createdAt * 1000 : Date.parse(m.createdAt as string))
+                    : 0;
+                  const expired = ts > 0 && Date.now() - ts > 60 * 60 * 1000;
+                  return expired ? (
+                    <div className="flex items-center gap-3 px-3 py-2.5">
+                      <FileIcon fileType={m.fileType} />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate max-w-[180px] text-gray-400">
+                          {m.fileName || "文件"}
+                        </div>
+                        <div className="text-[11px] text-red-400 mt-0.5">文件已过期</div>
+                      </div>
+                    </div>
+                  ) : (
                   <a
                     href={toAbs(m.url || m.content)}
                     download={m.fileName || true}
@@ -262,7 +277,9 @@ const ChatMessages: React.FC<ChatMessagesProps> = ({
                       <line x1="12" y1="15" x2="12" y2="3"/>
                     </svg>
                   </a>
-                ) : m.type === 1 && isImage ? (
+                  );
+                })()
+                : m.type === 1 && isImage ? (
                   <div className="p-1">
                     <img
                       src={toAbs(m.url || m.content)}
