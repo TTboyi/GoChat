@@ -106,11 +106,13 @@ func initSessionRoutes(r *gin.RouterGroup) {
 
 }
 
-// ================================ //
-// 🌐 WebSocket 路由
+// initWsRoutes WebSocket 及 TURN 相关路由
 func initWsRoutes(r *gin.RouterGroup) {
-	//r.GET("/wss", v1.WsLogin)
-	//r.POST("/wsLogout", v1.WsLogout) // 以后我们实现登出
+	// TURN 动态凭证（鉴权保护）
+	turn := r.Group("/turn")
+	{
+		turn.GET("/credentials", v1.GetTurnCredentials)
+	}
 }
 
 // InitRouter 初始化路由，仅包含注册接口和 WebSocket 登录

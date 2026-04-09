@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -34,17 +35,33 @@ type ChatMessageRequest struct {
 	Accept   *bool  `json:"accept"`
 }
 
-// Read 循环监听前端消息
+const (
+	pingInterval = 30 * time.Second  // 每30秒发一次心跳
+	pongWait     = 60 * time.Second  // 60秒内没收到 Pong 则认为断线
+	writeWait    = 10 * time.Second  // 写超时
+)
+
+// Read 循环监听前端消息（含心跳 Ping）
 func (c *Client) Read() {
 	defer func() {
-		ChatServer.RemoveClient(c.Uuid)
+		ChatServer.RemoveClient(c)
 	}()
 
-	for {
+	// 设置读取截止时间（Pong 处理器会重置）
+	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	c.Conn.SetPongHandler(func(string) error {
+		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
 
+	for {
 		_, data, err := c.Conn.ReadMessage()
 		if err != nil {
-			log.Printf("❌ Read 错误: %v", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("❌ Read 非正常断开: %v", err)
+			} else {
+				log.Printf("ℹ️ Read 连接关闭: %v", err)
+			}
 			break
 		}
 
@@ -92,28 +109,47 @@ func (c *Client) Read() {
 				env.Content,
 			)
 
-			// // ✅ 1. 发 Kafka（新主链路）
+			// ✅ 1. 发 Kafka（新主链路）
 			if ChatKafkaProducer != nil {
-
 				ChatKafkaProducer.Publish(env)
 			}
 
-			// // ⚠️ 2. 暂时保留旧内存链路（下一阶段删除）
+			// ⚠️ 2. 暂时保留旧内存链路（下一阶段删除）
 			// ChatServer.Transmit <- env
-
 		}
 	}
 }
 
-// Write 循环下发服务端消息
+// Write 循环下发服务端消息（含心跳 Ping）
 func (c *Client) Write() {
+	ticker := time.NewTicker(pingInterval)
 	defer func() {
+		ticker.Stop()
 		_ = c.Conn.Close()
 	}()
-	for msg := range c.SendBack {
-		if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			log.Printf("❌ Write 错误: %v", err)
-			break
+
+	for {
+		select {
+		case msg, ok := <-c.SendBack:
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				// channel 已关闭
+				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				log.Printf("❌ Write 错误: %v", err)
+				return
+			}
+
+		case <-ticker.C:
+			// 发送 Ping 心跳帧，保持连接
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("❌ Ping 发送失败，连接断开: %v", err)
+				return
+			}
+			log.Printf("💓 Ping -> %s", c.Uuid)
 		}
 	}
 }

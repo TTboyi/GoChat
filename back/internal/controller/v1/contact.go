@@ -71,7 +71,15 @@ func HandleContactApply(c *gin.Context) {
 			"action":    "contact_apply_accepted",
 			"acceptorId": userId,
 		})
+		// 通知申请方（对方接受了你的申请）
 		chat.ChatServer.DeliverToUser(applicantId, payload)
+
+		// ✅ 同时通知接受方自身（接受方自己的好友栏也实时更新）
+		acceptorPayload, _ := json.Marshal(map[string]interface{}{
+			"action":      "contact_list_updated",
+			"applicantId": applicantId,
+		})
+		chat.ChatServer.DeliverToUser(userId, acceptorPayload)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "处理成功"})
