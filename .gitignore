@@ -2,8 +2,15 @@
 # Project-specific binaries
 # =========================
 /main
+/main_linux
 /websocat
 /chatapp-server
+
+# =========================
+# Server deployment configs (contain sensitive info, manage separately on VPS)
+# =========================
+nginx.conf
+turnserver.conf
 
 # =========================
 # Static uploaded files (keep directories, ignore contents)
