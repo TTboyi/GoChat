@@ -178,7 +178,11 @@ export function useWebRTC(
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
+          // ✅ 调试：打印候选类型，确认是否有 relay 类型
+          console.log(`🌐 ICE候选 [caller] type=${event.candidate.type} protocol=${event.candidate.protocol} address=${event.candidate.address}`);
           callCandidate(ws, active.id, callId, event.candidate);
+        } else {
+          console.log("🌐 ICE候选收集完毕 [caller]");
         }
       };
 
@@ -279,12 +283,16 @@ export function useWebRTC(
 
     pc2.onicecandidate = (event) => {
       if (event.candidate) {
+        // ✅ 调试：打印候选类型，确认是否有 relay 类型
+        console.log(`🌐 ICE候选 [callee] type=${event.candidate.type} protocol=${event.candidate.protocol} address=${event.candidate.address}`);
         socket.send({
           action: "call_candidate",
           receiveId: from,
           callId,
           content: JSON.stringify(event.candidate),
         });
+      } else {
+        console.log("🌐 ICE候选收集完毕 [callee]");
       }
     };
 
