@@ -18,52 +18,43 @@ export interface IncomingCall {
   from: string;
   fromName?: string;
   callType: "audio" | "video";
-  offer: string; // JSON stringified RTCSessionDescriptionInit
+  offer: string;
 }
 
-// ✅ 从后端获取动态 TURN 凭证，构建 ICE 服务器列表
+// ✅ 动态获取 TURN 凭证
 async function fetchIceServers(): Promise<RTCIceServer[]> {
-  // 基础 STUN（总是可用）
   const stunServers: RTCIceServer[] = [
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
   ];
-
   try {
     const res = await api.getTurnCredentials();
     const { username, password, uris } = res.data;
     if (username && password && Array.isArray(uris)) {
       return [
         ...stunServers,
-        {
-          urls: uris,
-          username,
-          credential: password,
-        },
+        { urls: uris, username, credential: password },
       ];
     }
   } catch (e) {
     console.warn("⚠️ 无法获取 TURN 凭证，仅使用 STUN（跨网络通话可能失败）:", e);
   }
-
   return stunServers;
 }
 
-// ✅ 将媒体流挂载到 video 元素（含重试保障）
+// ✅ 挂载媒体流（含重试）
 function attachStream(
   videoRef: RefObject<HTMLVideoElement | null>,
   stream: MediaStream,
-  retries = 5
+  retries = 8
 ) {
   const tryAttach = (remaining: number) => {
     if (videoRef.current) {
       videoRef.current.srcObject = stream;
-      videoRef.current.play().catch(() => {}); // 忽略自动播放策略错误
+      videoRef.current.play().catch(() => {});
       return;
     }
-    if (remaining > 0) {
-      setTimeout(() => tryAttach(remaining - 1), 80);
-    }
+    if (remaining > 0) setTimeout(() => tryAttach(remaining - 1), 100);
   };
   tryAttach(retries);
 }
@@ -75,7 +66,6 @@ export function useWebRTC(
   const [callState, setCallState] = useState<CallState>(IDLE_CALL_STATE);
   const callStateRef = useRef<CallState>(IDLE_CALL_STATE);
 
-  // 待接听的来电
   const [incomingCall, setIncomingCall] = useState<IncomingCall | null>(null);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -83,13 +73,33 @@ export function useWebRTC(
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  // Keep ref in sync so signal handlers don't go stale
+  // ✅ ICE 候选缓冲：解决候选提前到达（未建立 PC 或未 setRemoteDescription）被丢弃的问题
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  // ✅ 标记 RemoteDescription 是否已经设置完毕（只有设置后才能安全 addIceCandidate）
+  const remoteDescReadyRef = useRef(false);
+
   useEffect(() => {
     callStateRef.current = callState;
   }, [callState]);
 
+  // ✅ 将缓冲的候选统一 apply 到 PC
+  const flushPendingCandidates = useCallback(async (pc: RTCPeerConnection) => {
+    const pending = [...pendingCandidatesRef.current];
+    pendingCandidatesRef.current = [];
+    console.log(`📦 flush ${pending.length} 个缓冲 ICE 候选`);
+    for (const cand of pending) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (err) {
+        console.warn("⚠️ flush addIceCandidate 失败:", err);
+      }
+    }
+  }, []);
+
   const cleanupCall = useCallback(() => {
     setCallState(IDLE_CALL_STATE);
+    pendingCandidatesRef.current = [];
+    remoteDescReadyRef.current = false;
     if (peerRef.current) {
       peerRef.current.close();
       peerRef.current = null;
@@ -107,24 +117,10 @@ export function useWebRTC(
     async (callType: "audio" | "video", active: SessionItem) => {
       const ws = wsRef.current;
       if (!ws || !active?.id) return;
+      // 防止重复发起
+      if (callStateRef.current.status !== "idle") return;
 
       const callId = Date.now().toString();
-
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const hasMic = devices.some((d) => d.kind === "audioinput");
-        const hasCam = devices.some((d) => d.kind === "videoinput");
-        if (callType === "video" && !hasCam) {
-          alert("未检测到摄像头设备，请检查硬件或权限。");
-          return;
-        }
-        if (!hasMic) {
-          alert("未检测到麦克风设备，请检查硬件或权限。");
-          return;
-        }
-      } catch (err) {
-        console.warn("🎥 无法枚举设备:", err);
-      }
 
       let stream: MediaStream;
       try {
@@ -134,33 +130,22 @@ export function useWebRTC(
             : { audio: true };
         stream = await navigator.mediaDevices.getUserMedia(constraints);
       } catch (err: any) {
-        console.error("🚫 无法访问麦克风或摄像头:", err);
+        console.error("🚫 无法访问媒体设备:", err);
         alert("无法访问麦克风或摄像头，请检查浏览器权限。");
         return;
       }
 
       localStreamRef.current = stream;
+      if (callType === "video") attachStream(localVideoRef, stream);
 
-      // ✅ 立即挂载本地视频（不等 callState 变化）
-      if (callType === "video") {
-        attachStream(localVideoRef, stream);
-      }
+      setCallState({ callId, peerId: active.id, status: "ringing", callType, isCaller: true });
 
-      // 设置状态（触发 CallWindow 渲染）
-      setCallState({
-        callId,
-        peerId: active.id,
-        status: "ringing",
-        callType,
-        isCaller: true,
-      });
-
-      // ✅ 获取动态 TURN 凭证
       const iceServers = await fetchIceServers();
       const pc = new RTCPeerConnection({ iceServers });
       peerRef.current = pc;
+      remoteDescReadyRef.current = false;
+      pendingCandidatesRef.current = [];
 
-      // 添加本地轨道
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
       pc.ontrack = (event) => {
@@ -168,7 +153,6 @@ export function useWebRTC(
         if (callType === "video") {
           attachStream(remoteVideoRef, remoteStream);
         } else {
-          // 语音通话：动态创建 audio 元素播放远端流
           const audioEl = document.createElement("audio");
           audioEl.srcObject = remoteStream;
           audioEl.autoplay = true;
@@ -178,7 +162,6 @@ export function useWebRTC(
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          // ✅ 调试：打印候选类型，确认是否有 relay 类型
           console.log(`🌐 ICE候选 [caller] type=${event.candidate.type} protocol=${event.candidate.protocol} address=${event.candidate.address}`);
           callCandidate(ws, active.id, callId, event.candidate);
         } else {
@@ -188,10 +171,7 @@ export function useWebRTC(
 
       pc.oniceconnectionstatechange = () => {
         console.log("📡 ICE 状态:", pc.iceConnectionState);
-        if (
-          pc.iceConnectionState === "disconnected" ||
-          pc.iceConnectionState === "failed"
-        ) {
+        if (pc.iceConnectionState === "disconnected" || pc.iceConnectionState === "failed") {
           console.warn("⚠️ ICE 连接失败或断开");
         }
       };
@@ -210,17 +190,14 @@ export function useWebRTC(
     [wsRef]
   );
 
-  // ✅ 主叫取消呼叫 / 通话结束
   const endCall = useCallback(() => {
     const ws = wsRef.current;
     const { peerId, callId } = callStateRef.current;
-    if (ws && peerId && callId) {
-      callEnd(ws, peerId, callId);
-    }
+    if (ws && peerId && callId) callEnd(ws, peerId, callId);
     cleanupCall();
   }, [wsRef, cleanupCall]);
 
-  // ✅ 接听来电（被叫）
+  // ✅ 被叫接听
   const acceptIncomingCall = useCallback(async () => {
     const pending = incomingCall;
     if (!pending) return;
@@ -228,17 +205,9 @@ export function useWebRTC(
     if (!socket) return;
 
     setIncomingCall(null);
-
     const { callId, from, callType, offer: offerStr } = pending;
 
-    // 先更新状态（触发 CallWindow 渲染）
-    setCallState({
-      callId,
-      peerId: from,
-      status: "in-call",
-      callType,
-      isCaller: false,
-    });
+    setCallState({ callId, peerId: from, status: "in-call", callType, isCaller: false });
 
     let stream: MediaStream;
     try {
@@ -255,18 +224,13 @@ export function useWebRTC(
     }
 
     localStreamRef.current = stream;
+    if (callType === "video") attachStream(localVideoRef, stream);
 
-    // ✅ 被叫立即挂载本地视频（修复移动端/接收方看不到自己画面的 bug）
-    if (callType === "video") {
-      attachStream(localVideoRef, stream);
-    }
-
-    // ✅ 获取动态 TURN 凭证
     const iceServers = await fetchIceServers();
     const pc2 = new RTCPeerConnection({ iceServers });
     peerRef.current = pc2;
+    remoteDescReadyRef.current = false;
 
-    // 添加本地所有轨道
     stream.getTracks().forEach((t) => pc2.addTrack(t, stream));
 
     pc2.ontrack = (event) => {
@@ -283,7 +247,6 @@ export function useWebRTC(
 
     pc2.onicecandidate = (event) => {
       if (event.candidate) {
-        // ✅ 调试：打印候选类型，确认是否有 relay 类型
         console.log(`🌐 ICE候选 [callee] type=${event.candidate.type} protocol=${event.candidate.protocol} address=${event.candidate.address}`);
         socket.send({
           action: "call_candidate",
@@ -302,6 +265,11 @@ export function useWebRTC(
 
     const remoteOffer = JSON.parse(offerStr);
     await pc2.setRemoteDescription(new RTCSessionDescription(remoteOffer));
+
+    // ✅ remote description 设置完毕 → flush 缓冲候选
+    remoteDescReadyRef.current = true;
+    await flushPendingCandidates(pc2);
+
     const answer = await pc2.createAnswer();
     await pc2.setLocalDescription(answer);
 
@@ -312,14 +280,12 @@ export function useWebRTC(
       accept: true,
       content: JSON.stringify(answer),
     });
-  }, [incomingCall, wsRef, cleanupCall]);
+  }, [incomingCall, wsRef, cleanupCall, flushPendingCandidates]);
 
-  // ✅ 拒绝来电
   const rejectIncomingCall = useCallback(() => {
     const pending = incomingCall;
     if (!pending) return;
-    const socket = wsRef.current;
-    socket?.send({
+    wsRef.current?.send({
       action: "call_answer",
       receiveId: pending.from,
       callId: pending.callId,
@@ -340,61 +306,49 @@ export function useWebRTC(
         case "call_invite": {
           if (from === me) return;
           if (callStateRef.current.status !== "idle") {
-            // 忙线，自动拒绝
-            socket?.send({
-              action: "call_answer",
-              receiveId: from,
-              callId,
-              accept: false,
-            });
+            socket?.send({ action: "call_answer", receiveId: from, callId, accept: false });
             return;
           }
-          // ✅ 使用状态而非 confirm 阻塞
-          setIncomingCall({
-            callId,
-            from,
-            callType,
-            offer: content || "",
-          });
+          setIncomingCall({ callId, from, callType, offer: content || "" });
           break;
         }
 
         case "call_answer": {
           if (from === me) return;
           if (accept === false) {
-            setCallState(IDLE_CALL_STATE);
             cleanupCall();
             alert("🚫 对方拒绝通话");
             return;
           }
           setCallState((prev) =>
-            prev.status === "in-call"
-              ? prev
-              : { ...prev, callId, peerId: from, status: "in-call" }
+            prev.status === "in-call" ? prev : { ...prev, callId, peerId: from, status: "in-call" }
           );
-          if (!pc) {
-            console.warn("⚠️ call_answer 收到时本地 peerRef 还不存在");
-            return;
-          }
-          if (content) {
+          if (!pc || !content) return;
+          if (pc.signalingState !== "stable") {
             const remoteAnswer = JSON.parse(content);
-            if (pc.signalingState !== "stable") {
-              await pc.setRemoteDescription(
-                new RTCSessionDescription(remoteAnswer)
-              );
-            }
+            await pc.setRemoteDescription(new RTCSessionDescription(remoteAnswer));
+            // ✅ remote description 设置完毕 → flush 缓冲候选
+            remoteDescReadyRef.current = true;
+            await flushPendingCandidates(pc);
           }
           break;
         }
 
         case "call_candidate": {
-          if (from === me) return;
-          if (!pc || !content) return;
+          if (from === me || !content) return;
           const ice = JSON.parse(content);
+
+          // ✅ 若 PC 未就绪或 remoteDescription 尚未设置，先缓冲
+          if (!pc || !remoteDescReadyRef.current) {
+            console.log("📦 缓冲 ICE 候选（PC 或 remoteDesc 未就绪）");
+            pendingCandidatesRef.current.push(ice);
+            return;
+          }
+
           try {
             await pc.addIceCandidate(new RTCIceCandidate(ice));
           } catch (err) {
-            console.error("❌ addIceCandidate 失败", err);
+            console.warn("⚠️ addIceCandidate 失败:", err);
           }
           break;
         }
@@ -406,7 +360,7 @@ export function useWebRTC(
         }
       }
     },
-    [wsRef, userId, cleanupCall]
+    [wsRef, userId, cleanupCall, flushPendingCandidates]
   );
 
   return {
