@@ -1,0 +1,27 @@
+name: Auto Deploy GoChat
+
+# 触发条件：当 main 分支有 git push 时执行
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-job:
+    runs-on: ubuntu-latest
+    steps:
+      # 第一步：把 GitHub 上的代码拉取到 GitHub 的临时机器上（可选，但建议保留）
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 第二步：通过 SSH 登录 VPS 并执行脚本
+      - name: SSH Remote Commands
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # 这一步最关键：进入项目目录并执行你的脚本
+          script: |
+            cd /root
+            bash gochat_deploy.sh
