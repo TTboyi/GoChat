@@ -80,17 +80,13 @@ func WsLogin(c *gin.Context) {
 
 // ✅ 用户主动退出 WebSocket
 func WsLogout(c *gin.Context) {
-	var form struct {
-		UserId string `json:"userId" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&form); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+	userId := c.GetString("userId")
+	if userId == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未认证用户"})
 		return
 	}
 
-	// 注意：WsLogout 无法精确定位到某个连接指针，这里通过userId移除所有连接
-	// 实际场景下多端独立管理，此接口保留为管理员或特殊用途
-	chat.ChatServer.RemoveAllClients(form.UserId)
+	chat.ChatServer.RemoveAllClients(userId)
 	c.JSON(http.StatusOK, gin.H{"message": "退出成功"})
 }
 

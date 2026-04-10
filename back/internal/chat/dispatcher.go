@@ -44,14 +44,20 @@ func dispatchKafkaMessage(km *KafkaMessage) {
 }
 
 func isGroup(id string) bool {
+	groupMemsMu.RLock()
 	_, ok := groupMembers[id]
+	groupMemsMu.RUnlock()
 	return ok
 }
 
 func dispatchToGroup(groupId string, raw []byte) {
-	if subs, ok := groupMembers[groupId]; ok {
-		for uid := range subs {
-			ChatServer.DeliverToUser(uid, raw)
-		}
+	groupMemsMu.RLock()
+	subs := make(map[string]bool, len(groupMembers[groupId]))
+	for k, v := range groupMembers[groupId] {
+		subs[k] = v
+	}
+	groupMemsMu.RUnlock()
+	for uid := range subs {
+		ChatServer.DeliverToUser(uid, raw)
 	}
 }

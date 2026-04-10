@@ -38,6 +38,7 @@ func StartDispatcherConsumer(brokers []string, group, topic string) {
 			log.Println("🟡 Dispatcher Consumer created")
 
 			err = client.Consume(context.Background(), []string{topic}, consumer)
+			client.Close()
 			if err != nil {
 				log.Printf("❌ dispatcher consume error: %v", err)
 				time.Sleep(3 * time.Second)

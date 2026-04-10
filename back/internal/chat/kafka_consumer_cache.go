@@ -26,6 +26,7 @@ func StartCacheConsumer(brokers []string, group, topic string) {
 			}
 
 			err = client.Consume(context.Background(), []string{topic}, &CacheConsumer{})
+			client.Close()
 			if err != nil {
 				log.Printf("❌ Cache consume error: %v", err)
 				time.Sleep(3 * time.Second)

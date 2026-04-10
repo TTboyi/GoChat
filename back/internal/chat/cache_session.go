@@ -19,10 +19,12 @@ func updateSessionList(
 
 	key := fmt.Sprintf("chat:session:list:%s", userId)
 
-	rdb.ZAdd(ctx, key, redis.Z{
+	if err := rdb.ZAdd(ctx, key, redis.Z{
 		Score:  float64(ts),
 		Member: sessionId,
-	})
+	}).Err(); err != nil {
+		return
+	}
 
 	// 只保留最近 20 个
 	rdb.ZRemRangeByRank(ctx, key, 0, -maxSessionCount-1)

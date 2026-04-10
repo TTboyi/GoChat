@@ -4,8 +4,8 @@ import (
 	"chatapp/back/internal/config"
 	"chatapp/back/internal/dto/req"
 	"chatapp/back/internal/model"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -83,6 +83,7 @@ type ContactApplyDetail struct {
 	Nickname    string    `json:"nickname"`
 	Avatar      string    `json:"avatar"`
 	Message     string    `json:"message"`
+	Status      int       `json:"status"`
 	LastApplyAt time.Time `json:"lastApplyAt"`
 }
 
@@ -91,7 +92,7 @@ func GetNewContactApplyList(userId string) ([]ContactApplyDetail, error) {
 	var list []ContactApplyDetail
 
 	err := db.Table("contact_apply AS a").
-		Select("a.uuid, a.user_id, u.nickname, u.avatar, a.message, a.last_apply_at").
+		Select("a.uuid, a.user_id, u.nickname, u.avatar, a.message, a.status, a.last_apply_at").
 		Joins("JOIN user_info AS u ON a.user_id = u.uuid").
 		Where("a.contact_id = ? AND a.contact_type = 0 AND a.status = 0", userId).
 		Order("a.last_apply_at DESC").
@@ -136,12 +137,19 @@ func HandleContactApply(userId string, form *req.HandleContactApplyRequest) (str
 			Status:      0,
 			CreatedAt:   time.Now(),
 		}
-		if err := db.Create(&contact1).Error; err != nil {
+		err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&contact1).Error; err != nil {
+				return err
+			}
+			if err := tx.Create(&contact2).Error; err != nil {
+				return err
+			}
+			return tx.Save(&apply).Error
+		})
+		if err != nil {
 			return "", err
 		}
-		if err := db.Create(&contact2).Error; err != nil {
-			return "", err
-		}
+		return apply.UserId, nil
 	} else {
 		apply.Status = 2
 	}
@@ -151,26 +159,16 @@ func HandleContactApply(userId string, form *req.HandleContactApplyRequest) (str
 
 func GetContactList(userId string) ([]ContactDetail, error) {
 	db := config.GetDB()
-	var contacts []model.UserContact
-	if err := db.Where("user_id = ? AND status = 0", userId).Find(&contacts).Error; err != nil {
-		return nil, err
-	}
-
 	var list []ContactDetail
-	for _, c := range contacts {
-		if c.ContactType == 0 {
-			var user model.UserInfo
-			if err := db.Where("uuid = ?", c.ContactId).First(&user).Error; err == nil {
-				list = append(list, ContactDetail{
-					Uuid:     user.Uuid,
-					Nickname: user.Nickname,
-					Avatar:   user.Avatar,
-					Type:     0,
-				})
-			}
-		}
+	err := db.Table("user_contact AS uc").
+		Select("u.uuid, u.nickname, u.avatar, 0 AS type").
+		Joins("JOIN user_info AS u ON uc.contact_id = u.uuid").
+		Where("uc.user_id = ? AND uc.status = 0 AND uc.contact_type = 0", userId).
+		Scan(&list).Error
+	if list == nil {
+		list = []ContactDetail{}
 	}
-	return list, nil
+	return list, err
 }
 
 func DeleteContact(userId, targetUserId string) error {
@@ -227,26 +225,10 @@ func BlackApply(userId, applyUuid string) error {
 func GetMyJoinedGroups(userId string) ([]model.GroupInfo, error) {
 	db := config.GetDB()
 	var groups []model.GroupInfo
-
-	var allGroups []model.GroupInfo
-	if err := db.Find(&allGroups).Error; err != nil {
-		return nil, err
-	}
-
-	for _, g := range allGroups {
-		var members []string
-		if len(g.Members) > 0 {
-			_ = json.Unmarshal(g.Members, &members)
-		}
-		for _, m := range members {
-			if m == userId {
-				groups = append(groups, g)
-				break
-			}
-		}
-	}
-
-	return groups, nil
+	// JSON_CONTAINS 直接在数据库层过滤，避免加载全表
+	err := db.Where("JSON_CONTAINS(members, ?) AND status = 0", fmt.Sprintf(`"%s"`, userId)).
+		Find(&groups).Error
+	return groups, err
 }
 
 func GetContactInfo(targetId string) (interface{}, error) {

@@ -138,10 +138,16 @@ func EnterGroupDirectly(c *gin.Context) {
 func QuitGroup(c *gin.Context) {
 	var req struct {
 		GroupId string `json:"groupId" binding:"required"`
-		UserId  string `json:"userId" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
+		return
+	}
+
+	// 从 JWT 中间件获取当前用户 ID，防止伪造
+	userId := c.GetString("userId")
+	if userId == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未认证用户"})
 		return
 	}
 
@@ -152,45 +158,31 @@ func QuitGroup(c *gin.Context) {
 		return
 	}
 
-	// 解 JSON
+	// 解 JSON，拿退出前的成员列表用于广播
 	var members []string
 	_ = json.Unmarshal(group.Members, &members)
 
-	// 删除该成员
-	newMembers := make([]string, 0, len(members))
-	for _, id := range members {
-		if id != req.UserId {
-			newMembers = append(newMembers, id)
-		}
+	// 使用 service 层（负责更新 members 并清理 user_contact）
+	if err := service.LeaveGroup(userId, req.GroupId); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
-	// 保存
-	membersJSON, _ := json.Marshal(newMembers)
-	db.Model(&group).Updates(map[string]interface{}{
-		"members":    membersJSON,
-		"member_cnt": len(newMembers),
-	})
-
-	// ✅ 广播给其它成员：有人退群
+	// ✅ 广播给其它成员：有人退群（仅通知剩余成员，不重复发送）
 	go func() {
 		msg := map[string]any{
 			"action":  "group_quit",
 			"groupId": req.GroupId,
-			"userId":  req.UserId,
+			"userId":  userId,
 		}
 		raw, _ := json.Marshal(msg)
-
-		// 推送给群里其他成员
-		for _, uid := range members { // members 就是当前群所有成员
-			if uid != req.UserId {
+		for _, uid := range members {
+			if uid != userId {
 				chat.ChatServer.DeliverToUser(uid, raw)
 			}
 		}
-		for _, uid := range newMembers {
-			chat.ChatServer.DeliverToUser(uid, raw)
-		}
-
-		chat.ChatServer.DeliverToUser(req.UserId, raw)
+		// 通知退出者本身（客户端可据此做 UI 清理）
+		chat.ChatServer.DeliverToUser(userId, raw)
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"message": "已退出群聊"})

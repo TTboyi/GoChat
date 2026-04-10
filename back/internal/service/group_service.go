@@ -1,7 +1,6 @@
 package service
 
 import (
-	"chatapp/back/internal/chat"
 	"chatapp/back/internal/config"
 	"chatapp/back/internal/dto/req"
 	"chatapp/back/internal/model"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // generateShortID 生成 8 位随机数字字符串
@@ -32,6 +32,12 @@ func CreateGroup(req *req.CreateGroupRequest) (string, error) {
 
 	// 构造群聊基本信息
 	uuid6 := generateGroupID()
+	members := []string{req.OwnerId}
+	membersJSON, err := json.Marshal(members)
+	if err != nil {
+		return "", fmt.Errorf("成员序列化失败: %w", err)
+	}
+
 	group := model.GroupInfo{
 		Uuid:      uuid6,
 		Name:      req.Name,
@@ -41,32 +47,24 @@ func CreateGroup(req *req.CreateGroupRequest) (string, error) {
 		AddMode:   int8(req.AddMode),
 		Avatar:    req.Avatar,
 		Status:    0,
+		Members:   membersJSON,
 		CreatedAt: time.Now(),
 	}
 
-	// 成员初始化（仅群主）
-	members := []string{req.OwnerId}
-	membersJSON, err := json.Marshal(members)
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&group).Error; err != nil {
+			return fmt.Errorf("群聊创建失败: %w", err)
+		}
+		contact := model.UserContact{
+			UserId:      req.OwnerId,
+			ContactId:   group.Uuid,
+			ContactType: 1,
+			Status:      0,
+			CreatedAt:   time.Now(),
+		}
+		return tx.Create(&contact).Error
+	})
 	if err != nil {
-		return "成员序列化失败", err
-	}
-	group.Members = membersJSON
-
-	// 创建群聊
-	if err := db.Create(&group).Error; err != nil {
-		return "群聊创建失败", err
-	}
-
-	// 将群聊作为联系人添加给群主
-	contact := model.UserContact{
-		UserId:      req.OwnerId,
-		ContactId:   group.Uuid,
-		ContactType: 1, // 假设 1 表示群聊
-		Status:      0,
-		CreatedAt:   time.Now(),
-	}
-
-	if err := db.Create(&contact).Error; err != nil {
 		return "", err
 	}
 
@@ -110,51 +108,32 @@ func EnterGroup(userId, groupUuid, message string) error {
 			}
 		}
 		members = append(members, userId)
-
 		membersBytes, _ := json.Marshal(members)
-		group.Members = membersBytes
-		group.MemberCnt = len(members)
 
-		if err := db.Save(&group).Error; err != nil {
-			return errors.New("加入群聊失败")
-		}
-
-		// —— ✅ 新增：群聊联系人关系（如果需要）
-		var cnt int64
-		db.Model(&model.UserContact{}).
-			Where("user_id = ? AND contact_id = ? AND contact_type = 1", userId, group.Uuid).
-			Count(&cnt)
-		if cnt == 0 {
-			uc := model.UserContact{
-				UserId:      userId,
-				ContactId:   group.Uuid,
-				ContactType: 1,
-				Status:      0,
-				CreatedAt:   time.Now(),
+		return db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Model(&group).Updates(map[string]interface{}{
+				"members":    membersBytes,
+				"member_cnt": len(members),
+			}).Error; err != nil {
+				return errors.New("加入群聊失败")
 			}
-			_ = db.Create(&uc).Error
-		}
-
-		// ✅✅✅ 关键：广播入群通知给其他成员
-		go func() {
-			msg := map[string]any{
-				"action":     "group_join",
-				"groupId":    groupUuid,
-				"userId":     userId,
-				"member_cnt": len(members), // ✅ 带人数
-				"members":    members,      // ✅ 带完整成员列表
-			}
-			raw, _ := json.Marshal(msg)
-
-			// 推给所有旧成员
-			for _, uid := range members {
-				if uid != userId {
-					chat.ChatServer.DeliverToUser(uid, raw)
+			// 确保 user_contact 记录存在
+			var cnt int64
+			tx.Model(&model.UserContact{}).
+				Where("user_id = ? AND contact_id = ? AND contact_type = 1", userId, group.Uuid).
+				Count(&cnt)
+			if cnt == 0 {
+				uc := model.UserContact{
+					UserId:      userId,
+					ContactId:   group.Uuid,
+					ContactType: 1,
+					Status:      0,
+					CreatedAt:   time.Now(),
 				}
+				return tx.Create(&uc).Error
 			}
-		}()
-
-		return nil
+			return nil
+		})
 	}
 
 	// ✅ 审核模式下暂时不推，保留原逻辑
@@ -196,13 +175,18 @@ func LeaveGroup(userId, groupUuid string) error {
 		}
 	}
 
-	group.Members, _ = json.Marshal(newMembers)
-	group.MemberCnt = len(newMembers)
+	newMembersJSON, _ := json.Marshal(newMembers)
 
-	if err := db.Save(&group).Error; err != nil {
-		return errors.New("退出群聊失败")
-	}
-	return nil
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&group).Updates(map[string]interface{}{
+			"members":    newMembersJSON,
+			"member_cnt": len(newMembers),
+		}).Error; err != nil {
+			return errors.New("退出群聊失败")
+		}
+		return tx.Where("user_id = ? AND contact_id = ? AND contact_type = 1", userId, groupUuid).
+			Delete(&model.UserContact{}).Error
+	})
 }
 
 func GetGroupMemberList(groupUuid string) ([]string, error) {
@@ -260,14 +244,18 @@ func RemoveGroupMember(ownerId, groupUuid, targetUserId string) error {
 	}
 
 	// 更新群组信息
-	group.Members, _ = json.Marshal(newMembers)
-	group.MemberCnt = len(newMembers)
+	newMembersJSON, _ := json.Marshal(newMembers)
 
-	if err := db.Save(&group).Error; err != nil {
-		return errors.New("更新群聊失败")
-	}
-
-	return nil
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&group).Updates(map[string]interface{}{
+			"members":    newMembersJSON,
+			"member_cnt": len(newMembers),
+		}).Error; err != nil {
+			return errors.New("更新群聊失败")
+		}
+		return tx.Where("user_id = ? AND contact_id = ? AND contact_type = 1", targetUserId, groupUuid).
+			Delete(&model.UserContact{}).Error
+	})
 }
 
 // 文件：back/internal/service/group.go（或你的 service 包里）
@@ -288,12 +276,19 @@ func DismissGroup(ownerId, groupUuid string) ([]string, error) {
 	var members []string
 	_ = json.Unmarshal(group.Members, &members)
 
-	// ✅ 标记解散 & 清空成员
-	group.Status = 2 // 2 = 解散
-	group.Members = []byte("[]")
-	group.MemberCnt = 0
-
-	if err := db.Save(&group).Error; err != nil {
+	err := db.Transaction(func(tx *gorm.DB) error {
+		// 标记解散 & 清空成员
+		group.Status = 2 // 2 = 解散
+		group.Members = []byte("[]")
+		group.MemberCnt = 0
+		if err := tx.Save(&group).Error; err != nil {
+			return err
+		}
+		// 删除所有成员的 user_contact 记录
+		return tx.Where("contact_id = ? AND contact_type = 1", groupUuid).
+			Delete(&model.UserContact{}).Error
+	})
+	if err != nil {
 		return nil, errors.New("解散失败")
 	}
 

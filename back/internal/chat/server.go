@@ -70,8 +70,11 @@ type Server struct {
 	Logout   chan *Client
 }
 
-// ✅ 记录每个群在线成员
-var groupMembers = make(map[string]map[string]bool) // groupId -> userId -> 在线状态
+// groupMembers 记录每个群在线成员，groupMemsMu 保护并发访问
+var (
+	groupMembers = make(map[string]map[string]bool) // groupId -> userId -> 在线状态
+	groupMemsMu  sync.RWMutex
+)
 
 // 全局唯一
 var ChatServer = &Server{
@@ -83,6 +86,8 @@ var ChatServer = &Server{
 }
 
 func (s *Server) AddUserToGroup(userId, groupId string) {
+	groupMemsMu.Lock()
+	defer groupMemsMu.Unlock()
 	if _, ok := groupMembers[groupId]; !ok {
 		groupMembers[groupId] = make(map[string]bool)
 	}
@@ -166,7 +171,10 @@ func (s *Server) isGroupTarget(db *gorm.DB, id string) bool {
 		return false
 	}
 	// ① 快速判断：有订阅（有人 join 过）就认为是群
-	if _, ok := groupMembers[id]; ok {
+	groupMemsMu.RLock()
+	_, ok := groupMembers[id]
+	groupMemsMu.RUnlock()
+	if ok {
 		return true
 	}
 	// ② 数据库兜底判断
@@ -292,10 +300,14 @@ func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 
 	// ✅ 使用订阅用户推送（而不是 group.Members）
 	raw, _ := json.Marshal(out)
-	if subs, ok := groupMembers[env.ReceiveId]; ok {
-		for userId := range subs {
-			s.deliverToUser(userId, raw)
-		}
+	groupMemsMu.RLock()
+	subs := make(map[string]bool, len(groupMembers[env.ReceiveId]))
+	for k, v := range groupMembers[env.ReceiveId] {
+		subs[k] = v
+	}
+	groupMemsMu.RUnlock()
+	for userId := range subs {
+		s.deliverToUser(userId, raw)
 	}
 
 	_ = db.Model(&model.Message{}).Where("uuid = ?", msgID).Update("status", 1).Error
@@ -331,10 +343,14 @@ func (s *Server) PushGroupDismiss(groupId string) {
 	})
 
 	// ✅ 推给这个群的所有在线成员
-	if subs, ok := groupMembers[groupId]; ok {
-		for uid := range subs {
-			s.deliverToUser(uid, raw)
-		}
+	groupMemsMu.RLock()
+	subs := make(map[string]bool, len(groupMembers[groupId]))
+	for k, v := range groupMembers[groupId] {
+		subs[k] = v
+	}
+	groupMemsMu.RUnlock()
+	for uid := range subs {
+		s.deliverToUser(uid, raw)
 	}
 }
 
@@ -475,6 +491,8 @@ func keysOfClients(m map[string][]*Client) []string {
 
 // 在 server.go 里加一个工具函数
 func (s *Server) removeUserFromAllGroups(userId string) {
+	groupMemsMu.Lock()
+	defer groupMemsMu.Unlock()
 	for gid, subs := range groupMembers {
 		if subs[userId] {
 			delete(subs, userId)

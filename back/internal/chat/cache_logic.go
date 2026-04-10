@@ -26,7 +26,9 @@ func cacheMessage(km *KafkaMessage) error {
 	if err := rdb.LPush(ctx, msgKey, msgRaw).Err(); err != nil {
 		return err
 	}
-	rdb.LTrim(ctx, msgKey, 0, maxMessageCount-1)
+	if err := rdb.LTrim(ctx, msgKey, 0, maxMessageCount-1).Err(); err != nil {
+		return err
+	}
 
 	// 2️⃣ 更新会话列表（ZSET）
 	updateSessionList(ctx, rdb, km.SendId, sessionId, km.CreatedAt)

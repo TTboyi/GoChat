@@ -27,6 +27,7 @@ func StartPersistConsumer(brokers []string, group, topic string) {
 				continue
 			}
 			err = client.Consume(context.Background(), []string{topic}, &PersistConsumer{})
+			client.Close()
 			if err != nil {
 				log.Printf("❌ Persist consume error: %v", err)
 				time.Sleep(3 * time.Second)
