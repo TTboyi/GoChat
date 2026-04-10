@@ -2,7 +2,7 @@ import React from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/api";
-import { setToken } from "../utils/session";
+import { setToken, setRefreshToken } from "../utils/session";
 
 type RegisterForm = {
   username: string;
@@ -35,16 +35,19 @@ const Register: React.FC = () => {
         password: data.password,
       });
       const token = loginRes.data?.token || loginRes.data?.data?.token;
+      const refresh = loginRes.data?.refresh || loginRes.data?.data?.refresh;
       if (token) {
         setToken(token);
+        if (refresh) setRefreshToken(refresh);
         navigate("/chat"); // 直接进入聊天页
       } else {
         // 极少数情况：注册成功但自动登录失败，回到登录页
         alert("注册成功！请手动登录");
         navigate("/");
       }
-    } catch (err) {
-      alert("注册请求失败，请检查网络或后端服务");
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.response?.data?.message || "注册请求失败，请检查网络或后端服务";
+      alert(msg);
     }
   };
 

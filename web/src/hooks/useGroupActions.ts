@@ -1,31 +1,22 @@
 // src/hooks/useGroupActions.ts
-import axios from "axios";
-import { API_BASE } from "../config";
+import api from "../api/api";
 
-export const leaveGroup = async (groupId: string) => {
+export const leaveGroup = async (groupId: string): Promise<boolean> => {
   try {
-    const res = await axios.post(
-      `${API_BASE}/group/leaveGroup`,
-      new URLSearchParams({ groupUuid: groupId }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-    );
-    alert(res.data.message || "退出成功");
+    await api.leaveGroup({ groupUuid: groupId });
+    return true;
   } catch (error) {
     console.error("退出群聊失败", error);
-    alert("退出失败");
+    return false;
   }
 };
 
-export const dismissGroup = async (groupId: string) => {
+export const dismissGroup = async (groupId: string): Promise<boolean> => {
   try {
-    const res = await axios.post(
-      `${API_BASE}/group/dismissGroup`,
-      new URLSearchParams({ groupUuid: groupId }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-    );
-    alert(res.data.message || "解散成功");
+    await api.dismissGroup({ groupId });
+    return true;
   } catch (error) {
     console.error("解散群聊失败", error);
-    alert("解散失败");
+    return false;
   }
 };

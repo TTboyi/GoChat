@@ -24,7 +24,7 @@ func main() {
 
 	// 2) 初始化全局 JWT（你现在用的方式）
 	utils.InitJWT("chatapp-secret", "chatapp", 60, 1440)
-	fmt.Println("JWT初始化成功:", string(utils.GetJWT().Key))
+	log.Println("JWT初始化成功")
 	// main.go
 	cfg := config.GetConfig()
 	utils.InitRedis(

@@ -1,59 +1,35 @@
 // src/hooks/useContactActions.ts
-import axios from "axios";
-import { API_BASE } from "../config";
+import api from "../api/api";
 
 // 删除联系人
-export const deleteContact = async (ownerId: string, contactId: string) => {
+export const deleteContact = async (contactId: string): Promise<boolean> => {
   try {
-    const res = await axios.post(`${API_BASE}/contact/deleteContact`, {
-      owner_id: ownerId,
-      contact_id: contactId,
-    });
-    alert(res.data.message || "删除成功");
+    await api.deleteContact({ userId: contactId });
     return true;
   } catch (err) {
     console.error("删除联系人失败", err);
-    alert("删除失败");
     return false;
   }
 };
 
 // 拉黑联系人
-export const blackContact = async (ownerId: string, contactId: string) => {
+export const blackContact = async (contactId: string): Promise<boolean> => {
   try {
-    const res = await axios.post(`${API_BASE}/contact/blackContact`, {
-      owner_id: ownerId,
-      contact_id: contactId,
-    });
-    alert(res.data.message || "已拉黑");
+    await api.blackContact({ userId: contactId });
     return true;
   } catch (err) {
     console.error("拉黑联系人失败", err);
-    alert("拉黑失败");
     return false;
   }
 };
 
 // 取消拉黑
-export const cancelBlackContact = async (ownerId: string, contactId: string) => {
+export const cancelBlackContact = async (contactId: string): Promise<boolean> => {
   try {
-    const res = await axios.post(
-      `${API_BASE}/contact/cancelBlackContact`,
-      {
-        owner_id: ownerId,
-        contact_id: contactId,
-      }
-    );
-    if (res.data.code === 200) {
-      alert(res.data.message || "已取消拉黑");
-      return true;
-    } else {
-      alert(res.data.message || "操作失败");
-      return false;
-    }
+    await api.unblackContact({ userId: contactId });
+    return true;
   } catch (err) {
     console.error("取消拉黑失败", err);
-    alert("取消拉黑失败");
     return false;
   }
 };

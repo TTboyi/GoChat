@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api/api";
-import { getToken } from "../utils/session";
+import { getToken, setToken, clearToken, setRefreshToken, clearRefreshToken } from "../utils/session";
 
 interface UserInfo {
   uuid: string;
@@ -34,7 +34,8 @@ export const useAuth = () => {
         setUser(data);
       } catch (err) {
         console.error("获取用户信息失败:", err);
-        localStorage.removeItem("token");
+        clearToken();
+        clearRefreshToken();
       } finally {
         setLoading(false);
       }
@@ -48,8 +49,11 @@ export const useAuth = () => {
     try {
       const res = await api.login({ nickname, password });
       const token = res.data?.token || res.data?.data?.token;
+      const refresh = res.data?.refresh || res.data?.data?.refresh;
       if (token) {
-        localStorage.setItem("token", token);
+        setToken(token);
+        if (refresh) setRefreshToken(refresh);
+        // 从登录响应中获取用户信息，避免额外的API调用
         const userRes = await api.getUserInfo();
         const userData = userRes.data?.data || userRes.data;
         setUser(userData);
@@ -66,7 +70,8 @@ export const useAuth = () => {
     try {
       await api.logout();
     } catch (_) {}
-    localStorage.removeItem("token");
+    clearToken();
+    clearRefreshToken();
     setUser(null);
     window.location.href = "/";
   };

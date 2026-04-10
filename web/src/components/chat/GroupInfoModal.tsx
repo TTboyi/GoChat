@@ -223,7 +223,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
               className="bg-red-500 text-white px-3 py-1 rounded text-sm"
               onClick={async () => {
                 if (!confirm("确定退出群聊？")) return;
-                await api.quitGroup({ groupId, userId: user?.uuid! });
+                await api.leaveGroup({ groupUuid: groupId });
                 onClose();
               }}
             >

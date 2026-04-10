@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { Link } from 'react-router-dom';
 import { useNavigate } from "react-router-dom";
 import api from "../api/api";
-import { setToken } from "../utils/session";
+import { setToken, setRefreshToken } from "../utils/session";
 
 
 type LoginForm = {
@@ -20,8 +20,10 @@ const Login: React.FC = () => {
     try {
       const res = await api.login(data);
       const token = res.data?.token || res.data?.data?.token;
+      const refresh = res.data?.refresh || res.data?.data?.refresh;
     if (token) {
       setToken(token);
+      if (refresh) setRefreshToken(refresh);
       navigate("/chat");
     } else {
       alert("登录失败：未返回 Token");

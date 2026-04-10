@@ -11,7 +11,6 @@ export function getTabId(): string {
 
 export function setToken(token: string) {
   const tabId = getTabId();
-  console.log("💾 保存 token:", token, "tabId:", tabId);
   sessionStorage.setItem(`token_${tabId}`, token);
   sessionStorage.setItem("token", token);
 }
@@ -20,7 +19,6 @@ export function getToken(): string | null {
   const tabId = sessionStorage.getItem("tabId");
   const scoped = tabId ? sessionStorage.getItem(`token_${tabId}`) : null;
   const fallback = sessionStorage.getItem("token");
-  console.log("🔍 getToken() 返回:", scoped || fallback);
   return scoped || fallback;
 }
 
@@ -28,4 +26,16 @@ export function clearToken() {
   const tabId = sessionStorage.getItem("tabId");
   if (tabId) sessionStorage.removeItem(`token_${tabId}`);
   sessionStorage.removeItem("token");
+}
+
+export function setRefreshToken(token: string) {
+  sessionStorage.setItem("refresh_token", token);
+}
+
+export function getRefreshToken(): string | null {
+  return sessionStorage.getItem("refresh_token");
+}
+
+export function clearRefreshToken() {
+  sessionStorage.removeItem("refresh_token");
 }

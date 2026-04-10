@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -17,10 +19,22 @@ import (
 	"gorm.io/gorm"
 )
 
+const userInfoCachePrefix = "user_info:"
+const userInfoCacheTTL = 15 * time.Minute
+
 func RegisterUser(db *gorm.DB, user *model.UserInfo) error {
 	existingUser, err := dao.GetUserByName(db, user.Nickname)
 	if err == nil && existingUser != nil {
-		return errors.New("手机号已注册")
+		return errors.New("用户名已注册")
+	}
+
+	// 哈希密码
+	if user.Password != "" {
+		hashed, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return errors.New("密码加密失败")
+		}
+		user.Password = string(hashed)
 	}
 
 	user.CreatedAt = time.Now()
@@ -34,8 +48,16 @@ func LoginUser(db *gorm.DB, name, password string, jwt *utils.ARJWT) (string, st
 		return "", "", errors.New("用户不存在")
 	}
 
-	if user.Password != password {
-		return "", "", errors.New("密码错误")
+	// 先尝试 bcrypt 比较（新注册/已迁移账号）
+	if bcryptErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); bcryptErr != nil {
+		// 回退到明文比较，兼容迁移前的旧账号
+		if user.Password != password {
+			return "", "", errors.New("密码错误")
+		}
+		// 旧账号登录成功 → 自动将明文密码升级为 bcrypt hash
+		if hashed, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost); hashErr == nil {
+			db.Model(user).Update("password", string(hashed))
+		}
 	}
 
 	access, refresh, err := jwt.GenerateToken(user.Uuid, user.IsAdmin)
@@ -87,14 +109,24 @@ func FindOrCreateUserByEmail(email string) (*model.UserInfo, error) {
 }
 
 func GetUserInfo(userId string) (*resp.UserInfoResponse, error) {
-	db := config.GetDB()
+	rdb := config.GetRedis()
+	ctx := context.Background()
+	cacheKey := userInfoCachePrefix + userId
 
+	// 优先读缓存
+	if cached, err := rdb.Get(ctx, cacheKey).Result(); err == nil {
+		var respUser resp.UserInfoResponse
+		if json.Unmarshal([]byte(cached), &respUser) == nil {
+			return &respUser, nil
+		}
+	}
+
+	db := config.GetDB()
 	var user model.UserInfo
 	if err := db.Where("uuid = ?", userId).First(&user).Error; err != nil {
 		return nil, err
 	}
 
-	// 转换成安全的响应 DTO
 	respUser := &resp.UserInfoResponse{
 		Uuid:      user.Uuid,
 		Nickname:  user.Nickname,
@@ -103,6 +135,11 @@ func GetUserInfo(userId string) (*resp.UserInfoResponse, error) {
 		Avatar:    user.Avatar,
 		Signature: user.Signature,
 		IsAdmin:   user.IsAdmin,
+	}
+
+	// 写入缓存，忽略错误
+	if data, err := json.Marshal(respUser); err == nil {
+		_ = rdb.Set(ctx, cacheKey, data, userInfoCacheTTL).Err()
 	}
 
 	return respUser, nil
@@ -142,6 +179,10 @@ func UpdateUserInfo(userId string, form *req.UpdateUserRequest) (*resp.UserInfoR
 	if err := db.Save(&user).Error; err != nil {
 		return nil, err
 	}
+
+	// 更新成功后删除缓存，下次读取时重新从DB加载
+	rdb := config.GetRedis()
+	_ = rdb.Del(context.Background(), userInfoCachePrefix+userId).Err()
 
 	// 返回安全 DTO
 	respUser := &resp.UserInfoResponse{

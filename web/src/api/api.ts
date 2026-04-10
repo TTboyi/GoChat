@@ -1,5 +1,5 @@
 import axios from "axios";
-import { getToken, setToken, clearToken } from "../utils/session";
+import { getToken, setToken, clearToken, getRefreshToken, setRefreshToken, clearRefreshToken } from "../utils/session";
 import { API_BASE } from "../config";
 
 // 创建 axios 实例
@@ -25,23 +25,38 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    // 只处理 401，且只重试一次，且不是 refresh 请求本身
+    // 只处理受保护接口的 401（排除登录/注册/验证码/刷新等公开接口）
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !originalRequest.url?.includes("/auth/refresh")
+      !originalRequest.url?.includes("/auth/refresh") &&
+      !originalRequest.url?.includes("/login") &&
+      !originalRequest.url?.includes("/register") &&
+      !originalRequest.url?.includes("/captcha")
     ) {
       originalRequest._retry = true;
+
+      // 没有 refresh token 时直接跳登录页，不发无效的刷新请求
+      const refreshToken = getRefreshToken();
+      if (!refreshToken) {
+        clearToken();
+        window.location.href = "/";
+        return Promise.reject(error);
+      }
 
       // 防止并发刷新（多个请求同时 401 时只刷新一次）
       if (!isRefreshing) {
         isRefreshing = true;
+        const accessToken = getToken();
+        const refreshToken = getRefreshToken();
         refreshPromise = axios
-          .post(`${API_BASE}/auth/refresh`, {}, { withCredentials: true })
+          .post(`${API_BASE}/auth/refresh`, { access: accessToken, refresh: refreshToken })
           .then((res) => {
             const newToken = res.data?.token || res.data?.data?.token;
+            const newRefresh = res.data?.refresh || res.data?.data?.refresh;
             if (newToken) {
               setToken(newToken);
+              if (newRefresh) setRefreshToken(newRefresh);
               return newToken;
             }
             return null;
@@ -61,6 +76,7 @@ api.interceptors.response.use(
       } else {
         // 刷新失败 → 清除 token，跳回登录页
         clearToken();
+        clearRefreshToken();
         window.location.href = "/";
         return Promise.reject(error);
       }
@@ -120,12 +136,13 @@ export default {
     return api.post("/group/enter", formData);
   },
 
-  // 退出群聊
-  leaveGroup: (data: { groupUuid: string }) => {
-    const formData = new FormData();
-    formData.append("groupId", data.groupUuid);
-    return api.post("/group/leave", formData);
-  },
+  // 退出群聊（作为普通成员）
+  leaveGroup: (data: { groupUuid: string }) =>
+    api.post("/group/quit", { groupId: data.groupUuid }),
+
+  // 解散群聊（群主权限）
+  dismissGroup: (data: { groupId: string }) =>
+    api.post("/group/dismiss", data),
 
   // 移除群成员（群主权限）
   removeMember: (data: { groupUuid: string; targetUserId: string }) => {
@@ -155,12 +172,6 @@ export default {
 
   updateGroupAvatar: (data: { groupUuid: string; avatar: string }) =>
     api.post("/group/updateAvatar", data),
-
-  quitGroup: (data: { groupId: string; userId: string }) =>
-    api.post("/group/quit", data),
-
-  dismissGroup: (data: { groupId: string }) =>
-    api.post("/group/dismiss", data),
 
   // ================= 联系人 =================
   applyContact: (data: { target: string; message: string }) =>

@@ -61,7 +61,6 @@ func generateUserID() string {
 
 func Login(c *gin.Context) {
 	var form req.LoginRequest
-	fmt.Println("JWT密钥:", string(utils.GetJWT().Key))
 
 	if err := c.ShouldBindJSON(&form); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数格式错误"})

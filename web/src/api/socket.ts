@@ -61,6 +61,10 @@ export class ChatWebSocket {
     const wsUrl = `${WS_BASE}/wss?token=${tk}`;
     this.ws = new WebSocket(wsUrl);
 
+    // 重连时将已订阅的群移回待订阅队列，连接成功后重新订阅
+    this.subscribedGroups.forEach(id => this.pendingGroups.add(id));
+    this.subscribedGroups.clear();
+
     this.ws.onopen = () => {
       console.log("✅ WebSocket 连接成功");
       this.onOpen?.();

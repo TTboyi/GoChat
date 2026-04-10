@@ -1,40 +1,60 @@
 import React, { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import api from "../api/api";
+import { setToken, setRefreshToken } from "../utils/session";
 
 type CaptchaLoginForm = {
-  phone: string;
+  email: string;
   code: string;
 };
 
 const CaptchaLogin: React.FC = () => {
-  const { register, handleSubmit, formState: { errors } } = useForm<CaptchaLoginForm>();
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<CaptchaLoginForm>();
   const [countdown, setCountdown] = useState(0);
+  const [sending, setSending] = useState(false);
+  const navigate = useNavigate();
 
-  const onSubmit = (data: CaptchaLoginForm) => {
-    console.log("验证码登录信息：", data);
+  const onSubmit = async (data: CaptchaLoginForm) => {
+    try {
+      const res = await api.emailCaptchaLogin({ email: data.email, code: data.code });
+      const token = res.data?.token || res.data?.data?.token;
+      const refresh = res.data?.refresh || res.data?.data?.refresh;
+      if (token) {
+        setToken(token);
+        if (refresh) setRefreshToken(refresh);
+        navigate("/chat");
+      } else {
+        alert("登录失败：未返回 Token");
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.error || "验证码登录失败");
+    }
   };
 
 
-  //用验证码登陆这里忘记用api了后面再说。。。
 
 
 
-
-
-  const sendCode = () => {
-    if (countdown > 0) return; // 倒计时期间禁止点击
-    console.log("发送验证码到邮箱");
-    setCountdown(60);
-    const timer = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+  const sendCode = async () => {
+    const email = watch("email");
+    if (!email) { alert("请先输入邮箱"); return; }
+    if (countdown > 0) return;
+    setSending(true);
+    try {
+      await api.sendEmailCaptcha({ email });
+      setCountdown(60);
+      const timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) { clearInterval(timer); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    } catch (err: any) {
+      alert(err?.response?.data?.error || "发送失败，请稍后再试");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -49,17 +69,17 @@ const CaptchaLogin: React.FC = () => {
           <h2 className="text-center text-3xl font-bold text-gray-800 mb-6">验证码登录</h2>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-            {/* 手机号 */}
+            {/* 邮箱 */}
             <div>
               <input
-                {...register("phone", { 
-                  required: "请输入手机号",
-                  pattern: { value: /^1[3-9]\d{9}$/, message: "手机号格式不正确" }
+                {...register("email", {
+                  required: "请输入邮箱",
+                  pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "邮箱格式不正确" }
                 })}
-                placeholder="手机号"
+                placeholder="邮箱"
                 className="w-full rounded-lg border placeholder-black/40 text-black border-gray-300 bg-white/50 p-3 focus:outline-none focus:ring-2 focus:ring-blue-400"
               />
-              {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone.message}</p>}
+              {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email.message}</p>}
             </div>
 
             {/* 验证码 + 发送按钮 */}
@@ -72,14 +92,14 @@ const CaptchaLogin: React.FC = () => {
               <button
                 type="button"
                 onClick={sendCode}
-                disabled={countdown > 0}
+                disabled={countdown > 0 || sending}
                 className={`w-20 rounded-lg font-semibold py-3 ${
-                  countdown > 0
+                  countdown > 0 || sending
                     ? "bg-gray-400 text-white cursor-not-allowed"
                     : "bg-blue-500 hover:bg-blue-600 text-white"
                 }`}
               >
-                {countdown > 0 ? `${countdown}s` : "发送"}
+                {countdown > 0 ? `${countdown}s` : sending ? "..." : "发送"}
               </button>
             </div>
             {errors.code && <p className="text-red-500 text-sm mt-1">{errors.code.message}</p>}
