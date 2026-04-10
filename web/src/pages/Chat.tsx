@@ -105,6 +105,9 @@ const Chat: React.FC = () => {
     uuid: string; nickname: string; email?: string; avatar?: string; remark?: string;
   } | null>(null);
 
+  // ===== 好友申请角标 =====
+  const [newApplyCount, setNewApplyCount] = useState(0);
+
   // 好友申请自动弹窗控制：同一批次只弹一次
   const newApplyAutoShownRef = useRef(false);
   const showNewFriendRef = useRef(false);
@@ -289,8 +292,9 @@ const Chat: React.FC = () => {
         return;
       }
 
-      // ✅ 收到好友申请通知 - 仅在本批次未自动弹出过的情况下弹窗
+      // ✅ 收到好友申请通知 - 更新角标并在本批次未自动弹出过的情况下弹窗
       if (anyMsg.action === "new_contact_apply") {
+        setNewApplyCount((prev) => prev + 1);
         if (!newApplyAutoShownRef.current && !showNewFriendRef.current) {
           newApplyAutoShownRef.current = true;
           setShowNewFriend(true);
@@ -545,7 +549,13 @@ const Chat: React.FC = () => {
   handleIncomingMessageRef.current = handleIncomingMessage;
 
   // ===== Effects =====
-  useEffect(() => { loadContacts(); }, []);
+  useEffect(() => {
+    loadContacts();
+    api.getNewContactList().then((res) => {
+      const list = res.data?.data || [];
+      setNewApplyCount(list.length);
+    }).catch(() => {});
+  }, []);
 
   // ✅ sessions 变化时，只在未初始化或当前会话失效时才调整 activeId
   const activeIdInitialized = useRef(false);
@@ -658,12 +668,14 @@ const Chat: React.FC = () => {
           unreadCounts={unreadCounts}
           onlineUsers={onlineUsers}
           isDark={isDark}
+          newApplyCount={newApplyCount}
           onToggleTheme={handleToggleTheme}
           onSelectSession={handleSelectSession}
           onShowProfile={() => setShowProfile(true)}
           onLogout={handleLogout}
           onShowNewFriend={() => {
             newApplyAutoShownRef.current = false;
+            setNewApplyCount(0);
             setShowNewFriend(true);
           }}
           onShowAddFriend={() => setShowAddFriend(true)}

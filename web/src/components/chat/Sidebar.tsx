@@ -10,6 +10,7 @@ interface SidebarProps {
   unreadCounts: Record<string, number>;
   onlineUsers: Set<string>;
   isDark: boolean;
+  newApplyCount?: number;
   onToggleTheme: () => void;
   onSelectSession: (id: string) => void;
   onShowProfile: () => void;
@@ -28,6 +29,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   unreadCounts,
   onlineUsers,
   isDark,
+  newApplyCount = 0,
   onToggleTheme,
   onSelectSession,
   onShowProfile,
@@ -53,25 +55,25 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const menuItems = [
     { label: "个人资料", action: onShowProfile },
-    { label: "新朋友申请", action: onShowNewFriend },
+    { label: "新朋友申请", action: onShowNewFriend, badge: newApplyCount },
     { label: "添加好友", action: onShowAddFriend },
     { label: "创建群聊", action: onShowCreateGroup },
     { label: "加入群聊", action: onShowJoinGroup },
     { divider: true },
     { label: "退出登录", action: onLogout, danger: true },
-  ] as const;
+  ];
 
   // ===== 主题色 token =====
-  const bg       = isDark ? "bg-[#2e2e2e]"    : "bg-gray-50";
-  const border   = isDark ? "border-black/20"  : "border-gray-200";
-  const textMain = isDark ? "text-gray-200"    : "text-gray-800";
-  const textSub  = isDark ? "text-gray-400"    : "text-gray-500";
-  const hoverBg  = isDark ? "hover:bg-[#3a3b3d]" : "hover:bg-gray-100";
-  const activeBg = isDark ? "bg-[#3a3b3d]"    : "bg-gray-200";
-  const searchBg = isDark ? "bg-white/10"      : "bg-gray-200";
-  const dropBg   = isDark ? "bg-[#3a3b3d] border-black/30" : "bg-white border-gray-200";
+  const bg = isDark ? "bg-[#2e2e2e]" : "bg-gray-50";
+  const border = isDark ? "border-black/20" : "border-gray-200";
+  const textMain = isDark ? "text-gray-200" : "text-gray-800";
+  const textSub = isDark ? "text-gray-400" : "text-gray-500";
+  const hoverBg = isDark ? "hover:bg-[#3a3b3d]" : "hover:bg-gray-100";
+  const activeBg = isDark ? "bg-[#3a3b3d]" : "bg-gray-200";
+  const searchBg = isDark ? "bg-white/10" : "bg-gray-200";
+  const dropBg = isDark ? "bg-[#3a3b3d] border-black/30" : "bg-white border-gray-200";
   const dropItem = isDark ? "hover:bg-white/10 text-gray-200" : "hover:bg-gray-100 text-gray-700";
-  const dotBorder= isDark ? "border-[#2e2e2e]" : "border-gray-50";
+  const dotBorder = isDark ? "border-[#2e2e2e]" : "border-gray-50";
   const avatarFallbackBg = isDark ? "bg-white/20" : "bg-gray-300";
   // ✅ 切换按钮：使用实色背景 + 边框，确保始终清晰可见
   const toggleBg = isDark
@@ -130,11 +132,16 @@ const Sidebar: React.FC<SidebarProps> = ({
                   key={i}
                   onClick={() => { item.action(); setMenuOpen(false); }}
                   className={cn(
-                    `w-full text-left px-4 py-2.5 text-sm transition bg-transparent border-none ${dropItem}`,
+                    `w-full text-left px-4 py-2.5 text-sm transition bg-transparent border-none ${dropItem} flex items-center justify-between`,
                     item.danger ? "!text-red-400" : ""
                   )}
                 >
-                  {item.label}
+                  <span>{item.label}</span>
+                  {"badge" in item && item.badge > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 font-bold">
+                      {item.badge > 99 ? "99+" : item.badge}
+                    </span>
+                  )}
                 </button>
               )
             )}
