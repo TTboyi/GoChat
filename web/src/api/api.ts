@@ -2,13 +2,17 @@ import axios from "axios";
 import { getToken, setToken, clearToken, getRefreshToken, setRefreshToken, clearRefreshToken } from "../utils/session";
 import { API_BASE } from "../config";
 
-// 创建 axios 实例
+// 这个文件相当于“前端访问后端的统一网关”：
+// 1. 创建 axios 实例；
+// 2. 在请求阶段自动带上 access token；
+// 3. 在响应阶段统一处理 401 和 token 刷新；
+// 4. 导出按业务域划分的接口方法，供页面/Hook 直接调用。
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 10000,
 });
 
-// 请求拦截器：带上 JWT
+// 请求拦截器：给受保护接口自动补 Authorization 头。
 api.interceptors.request.use((config: any) => {
   const token = getToken();
   if (token && config.headers) {
@@ -17,7 +21,8 @@ api.interceptors.request.use((config: any) => {
   return config;
 });
 
-// ✅ 响应拦截器：Token 过期时自动刷新（避免视频通话中途因 401 失败）
+// 响应拦截器：集中处理“access token 过期但 refresh token 还有效”的情况。
+// 这里用 isRefreshing + refreshPromise 做并发收敛，避免多个 401 同时触发多次刷新请求。
 let isRefreshing = false;
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -36,7 +41,7 @@ api.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
-      // 没有 refresh token 时直接跳登录页，不发无效的刷新请求
+      // 没有 refresh token 时，说明无法自动续期，只能回登录页重新登录。
       const refreshToken = getRefreshToken();
       if (!refreshToken) {
         clearToken();
@@ -44,7 +49,7 @@ api.interceptors.response.use(
         return Promise.reject(error);
       }
 
-      // 防止并发刷新（多个请求同时 401 时只刷新一次）
+      // 多个请求同时 401 时，只允许第一个请求真正发起刷新，其它请求复用同一个 Promise。
       if (!isRefreshing) {
         isRefreshing = true;
         const accessToken = getToken();
@@ -70,11 +75,11 @@ api.interceptors.response.use(
 
       const newToken = await refreshPromise;
       if (newToken) {
-        // 用新 token 重试原请求
+        // 刷新成功后，用新 token 无感重试原请求。
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);
       } else {
-        // 刷新失败 → 清除 token，跳回登录页
+        // 刷新失败时，前端不能再假装自己已登录，必须清掉本地状态。
         clearToken();
         clearRefreshToken();
         window.location.href = "/";
@@ -87,6 +92,7 @@ api.interceptors.response.use(
 
 export default {
   // ================= 用户认证 =================
+  // 这些方法刻意保持“薄封装”，让调用方一眼能看出它们对应哪个后端接口。
   register: (data: { nickname: string; password: string }) =>
     api.post("/register", data),
 
@@ -245,5 +251,6 @@ export default {
   getSystemStats: () => api.get("/admin/stats"),
 
   // ================= TURN 服务器动态凭证 =================
+  // WebRTC Hook 会在真正发起/接听通话前调用它，动态获取 ICE server 配置。
   getTurnCredentials: () => api.get("/turn/credentials"),
 };

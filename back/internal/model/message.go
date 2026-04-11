@@ -2,6 +2,9 @@ package model
 
 import "time"
 
+// Message 是消息持久化表。
+// 一条记录既能表示文本消息，也能表示文件消息，甚至能承载通话过程中的附加数据，
+// 因此字段设计上偏“宽表”。
 type Message struct {
 	Id         int64      `gorm:"column:id;primaryKey;comment:自增id" json:"id"`
 	Uuid       string     `gorm:"column:uuid;uniqueIndex;type:char(20);not null;comment:消息uuid" json:"uuid"`
@@ -23,6 +26,7 @@ type Message struct {
 	AVdata     string     `gorm:"column:av_data;comment:通话传递数据" json:"avData"`
 }
 
+// TableName 显式指定数据库表名。
 func (Message) TableName() string {
 	return "message"
 }

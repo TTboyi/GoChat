@@ -3,6 +3,7 @@ import api from "../api/api";
 
 import { getToken, setToken, clearToken } from "../utils/session";
 
+// UserInfo 描述前端真正关心的“当前登录用户最小画像”。
 interface UserInfo {
   uuid: string;
   nickname: string;
@@ -12,6 +13,10 @@ interface UserInfo {
   is_admin?: boolean;
 }
 
+// AuthContextType 定义了页面可消费的认证能力：
+// - user / loading：当前状态；
+// - login / logout：认证动作；
+// - refreshUser：资料变更后的同步入口。
 interface AuthContextType {
   user: UserInfo | null;
   loading: boolean;
@@ -22,11 +27,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// AuthProvider 是整个前端认证状态的“单一事实来源”。
+// 页面组件不要自己直接维护“我是不是登录了”，而是统一从这里读取。
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
-  /** ✅ 初始化：每个标签页独立加载自己的用户 */
+  /**
+   * 初始化阶段：
+   * 1. 先从 sessionStorage 取当前标签页的 token；
+   * 2. 如果有 token，就请求后端恢复用户资料；
+   * 3. 如果失败，说明 token 无效或已过期，清掉本地状态。
+   */
   useEffect(() => {
     const token = getToken();
     if (!token) {
@@ -50,7 +62,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setTimeout(fetchUser, 100);
   }, []);
 
-  /** ✅ 登录逻辑 */
+  /**
+   * login 只负责“完成登录动作并把用户状态装进上下文”。
+   * 具体接口细节（请求地址、拦截器、刷新 token）都交给 api.ts。
+   */
   const login = async (nickname: string, password: string) => {
   try {
     const res = await api.login({ nickname, password });
@@ -77,7 +92,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
   return false;
 };
-  /** ✅ 登出逻辑 */
+  // logout 既通知后端失效 token，也把前端的内存态/存储态一起清空。
   const logout = async () => {
     try {
       await api.logout();
@@ -87,7 +102,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.location.href = "/";
   };
 
-  /** ✅ 刷新用户信息（修改资料后） */
+  // refreshUser 常用于“个人资料更新成功后，把最新头像/昵称拉回来”。
   const refreshUser = async () => {
     try {
       const res = await api.getUserInfo();
@@ -105,7 +120,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-/** ✅ 导出 Hook */
+// useAuth 让页面以 Hook 的方式消费认证上下文，避免层层透传 props。
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth 必须在 <AuthProvider> 内使用");

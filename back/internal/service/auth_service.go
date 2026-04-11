@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-// 刷新 token
+// RefreshToken 校验旧 token 状态后，签发一组新的 access/refresh token。
+// 这里额外检查 Redis 黑名单，避免已经“逻辑登出”的 access token 还能继续刷新。
 func RefreshToken(accessToken, refreshToken string) (string, string, error) {
 	j := utils.GetJWT()
 	// 如果 access 在黑名单里，直接不允许刷新
@@ -20,7 +21,8 @@ func RefreshToken(accessToken, refreshToken string) (string, string, error) {
 	return j.RefreshToken(accessToken, refreshToken)
 }
 
-// 退出登录：将 access token 放入黑名单直到它自然过期
+// Logout 的核心思想不是立即删除 JWT，而是把它放进 Redis 黑名单直到自然过期。
+// 因为 JWT 一旦签发就无法真正“撤销”，所以很多系统都会用黑名单来补齐登出语义。
 func Logout(accessToken string) error {
 	j := utils.GetJWT()
 

@@ -12,6 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// initMessageRoutes 注册消息相关接口。
+// 阅读时可以把它理解成“聊天内容的 HTTP 补充通道”：
+// 真正的实时消息走 WebSocket，而历史记录、文件上传、撤回、已读等走 REST。
 func initMessageRoutes(r *gin.RouterGroup) {
 	message := r.Group("/message")
 	{
@@ -27,6 +30,7 @@ func initMessageRoutes(r *gin.RouterGroup) {
 
 }
 
+// initUserRoutes 注册用户资料维护接口。
 func initUserRoutes(r *gin.RouterGroup) {
 	user := r.Group("/user")
 	{
@@ -35,6 +39,8 @@ func initUserRoutes(r *gin.RouterGroup) {
 	}
 }
 
+// initAdminRoutes 注册管理员专用接口。
+// 这里是二次保护：先通过普通登录鉴权，再通过 AdminOnly 校验管理员身份。
 func initAdminRoutes(rg *gin.RouterGroup) {
 	auth := rg.Group("/api", middleware.AuthMiddleware(utils.GetJWT()))
 	{
@@ -50,6 +56,7 @@ func initAdminRoutes(rg *gin.RouterGroup) {
 	}
 }
 
+// initGroupRoutes 注册群聊生命周期相关接口。
 func initGroupRoutes(r *gin.RouterGroup) {
 	group := r.Group("/group")
 	{
@@ -69,6 +76,7 @@ func initGroupRoutes(r *gin.RouterGroup) {
 	}
 }
 
+// initContactRoutes 管理好友申请、联系人关系和入群申请。
 func initContactRoutes(r *gin.RouterGroup) {
 	apply := r.Group("/apply")
 	{
@@ -95,6 +103,8 @@ func initContactRoutes(r *gin.RouterGroup) {
 
 }
 
+// initSessionRoutes 注册“会话列表”相关接口。
+// 这里的 session 更接近“聊天列表项”，不是 HTTP session。
 func initSessionRoutes(r *gin.RouterGroup) {
 	session := r.Group("/session")
 	{
@@ -109,14 +119,19 @@ func initSessionRoutes(r *gin.RouterGroup) {
 
 // initWsRoutes WebSocket 及 TURN 相关路由
 func initWsRoutes(r *gin.RouterGroup) {
-	// TURN 动态凭证（鉴权保护）
+	// TURN 凭证接口虽然不是 WebSocket 本身，
+	// 但它直接服务于 WebRTC 通话，因此放在同一组里方便理解。
 	turn := r.Group("/turn")
 	{
 		turn.GET("/credentials", v1.GetTurnCredentials)
 	}
 }
 
-// InitRouter 初始化路由，仅包含注册接口和 WebSocket 登录
+// InitRouter 统一组装整个 Gin 路由树。
+// 建议阅读顺序：
+// 1. 先看公开接口（登录、注册、刷新 token、WebSocket 握手）；
+// 2. 再看 authGroup 里受保护的业务接口；
+// 3. 最后结合 controller/service 追具体业务实现。
 func InitRouter() *gin.Engine {
 	jwt := utils.GetJWT()
 	r := gin.Default()
@@ -131,10 +146,11 @@ func InitRouter() *gin.Engine {
 	// }))
 
 	// 静态资源
+	// 前端上传后的头像/文件最终都会经由这两个目录对外暴露。
 	r.Static("/static/avatars", "./static/avatars")
 	r.Static("/static/files", "./static/files")
 
-	// 注册接口
+	// 公开接口：无需先走 AuthMiddleware。
 	r.POST("/register", v1.Register)
 	r.POST("/auth/refresh", v1.RefreshToken)
 	r.POST("/auth/logout", v1.Logout)
@@ -144,11 +160,8 @@ func InitRouter() *gin.Engine {
 	r.POST("/captcha/send_email", v1.SendEmailCaptcha)
 	r.POST("/captcha/login_email", v1.EmailCaptchaLogin)
 
-	// WebSocket 登录（如暂未实现，可先注释）
-	//r.GET("/wss", v1.WsLogin)
-
-	// 鉴权保护接口（当前无内容，可以删除或保留空组）
-	authGroup := r.Group("/", middleware.AuthMiddleware(jwt)) // 占位
+	// 鉴权保护接口：下面的分组都要求先携带 access token。
+	authGroup := r.Group("/", middleware.AuthMiddleware(jwt))
 	{
 		initGroupRoutes(authGroup)
 		initContactRoutes(authGroup)

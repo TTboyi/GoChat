@@ -1,8 +1,12 @@
-// ✅ socket.ts – 自动群订阅 + 重连恢复 + 实时群消息
+// socket.ts 封装浏览器原生 WebSocket，补上了三个聊天应用常见能力：
+// 1. 断线自动重连；
+// 2. 群聊订阅状态恢复；
+// 3. 统一的消息发送辅助函数。
 
 import { getToken } from "../utils/session";
 import { WS_BASE } from "../config";
 
+// ChatMessage 是“普通聊天消息”的发送载荷。
 export interface ChatMessage {
   type: number;
   content: string;
@@ -13,6 +17,8 @@ export interface ChatMessage {
   fileSize?: string;
 }
 
+// IncomingMessage 是前端消费服务端推送时的宽松类型。
+// 它既容纳普通聊天消息，也容纳系统事件和控制消息。
 export interface IncomingMessage {
   uuid?: string;
   type: number;
@@ -36,6 +42,8 @@ interface ChatWebSocketProps {
   reconnect?: boolean;
 }
 
+// ChatWebSocket 把“连接生命周期管理”封装成一个类，
+// 这样页面层只需要关心 onMessage/onOpen/onClose，而不用反复处理底层细节。
 export class ChatWebSocket {
   private ws: WebSocket | null = null;
   private token: string;
@@ -57,11 +65,13 @@ export class ChatWebSocket {
   }
 
   private connect() {
+    // 优先读取最新 token，避免刷新 token 后还沿用旧值重连。
     const tk = getToken() || this.token;
     const wsUrl = `${WS_BASE}/wss?token=${tk}`;
     this.ws = new WebSocket(wsUrl);
 
-    // 重连时将已订阅的群移回待订阅队列，连接成功后重新订阅
+    // 重连时把“已经订阅过的群”重新放回待发送队列，
+    // 等 onopen 之后再补发 join_group，恢复实时推送能力。
     this.subscribedGroups.forEach(id => this.pendingGroups.add(id));
     this.subscribedGroups.clear();
 
@@ -101,13 +111,15 @@ export class ChatWebSocket {
     }, 3000);
   }
 
-  // ✅ 设置需要订阅的群
+  // setGroups 记录当前用户需要订阅的所有群。
+  // 如果连接已经建立，会马上 flush；否则等 onopen 后统一补发。
   setGroups(groupIds: string[]) {
     groupIds.forEach(id => this.pendingGroups.add(id)); // 记录需要订阅的群
     this.flushGroupSubscriptions();
   }
 
-  // ✅ flush 群订阅，连接成功后才发送 join_group
+  // flushGroupSubscriptions 只在连接处于 OPEN 时发送 join_group，
+  // 避免在尚未建连成功时调用 send 导致消息丢失。
   private flushGroupSubscriptions() {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
@@ -122,6 +134,7 @@ export class ChatWebSocket {
   }
 
   send(msg: any) {
+    // 所有上行消息最终都会走这里，因此这里也是观察“WS 当前是否可用”的最佳位置。
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       console.warn("⚠️ WebSocket 未连接，消息丢失:", msg);
       return;
@@ -136,13 +149,13 @@ export class ChatWebSocket {
   }
 }
 
-// ✅ 发送文本消息
+// sendTextMessage / sendFileMessage / call* 系列函数，
+// 目的是让页面层用“业务语义”发消息，而不是手写 JSON。
 export const sendTextMessage = (socket: ChatWebSocket, content: string, receiveId: string) => {
   const msg: ChatMessage = { type: 0, content, receiveId };
   socket.send(msg);
 };
 
-// ✅ 发送文件消息
 export const sendFileMessage = (
   socket: ChatWebSocket,
   fileUrl: string,
@@ -202,4 +215,3 @@ export const callEnd = (socket: ChatWebSocket, targetUserId: string, callId: str
     callId,
   });
 };
-

@@ -1,4 +1,7 @@
-// Chat.tsx
+// Chat.tsx 是整个前端最核心的“聊天工作台”页面。
+// 你可以把它理解成一个装配层：它自己不实现所有细节，
+// 而是负责把“会话列表、消息列表、输入框、WebSocket、WebRTC、各种弹窗”
+// 这些子系统拼成一个完整的聊天体验。
 import React, { useEffect, useCallback, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { ChatWebSocket, sendTextMessage, sendFileMessage } from "../api/socket";
@@ -51,6 +54,9 @@ const Chat: React.FC = () => {
   }, []);
 
   // ===== 会话状态 =====
+  // sessions：左侧列表的所有项；
+  // activeId：当前正在看的会话；
+  // sessionIndex / groupIdSet：帮助快速判断某个 id 是用户还是群。
   const [sessions, setSessions] = useState<SessionItem[]>([]);
   const [activeId, setActiveId] = useState<string>(loadActiveId());
   const [sessionIndex, setSessionIndex] = useState<Record<string, "user" | "group">>({});
@@ -60,6 +66,8 @@ const Chat: React.FC = () => {
   useEffect(() => { if (activeId) saveActiveId(activeId); }, [activeId]);
 
   // ===== 消息状态 =====
+  // messagesMap 采用“bucketId -> 消息数组”的结构，
+  // 这样私聊和群聊都能用统一方式按会话分桶管理。
   const [messagesMap, setMessagesMap] = useState<Record<string, Message[]>>({});
   const [hasMoreMap, setHasMoreMap] = useState<Record<string, boolean>>({});
   const [input, setInput] = useState("");
@@ -76,6 +84,7 @@ const Chat: React.FC = () => {
   useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
 
   // ===== WebSocket =====
+  // ws 用于触发重渲染，wsRef 用于在回调/Effect 中安全拿到最新连接实例。
   const [ws, setWs] = useState<ChatWebSocket | null>(null);
   const wsRef = useRef<ChatWebSocket | null>(null);
   // ✅ 始终指向最新的 handleIncomingMessage，避免 WS 闭包过期
@@ -127,6 +136,7 @@ const Chat: React.FC = () => {
   };
 
   // ===== WebRTC =====
+  // 通话相关复杂状态被抽到了 useWebRTC 里，Chat 页面只负责把 active 会话传进去。
   const {
     callState,
     incomingCall,
@@ -146,7 +156,7 @@ const Chat: React.FC = () => {
     s.type === "user" && remarks[s.id] ? { ...s, name: remarks[s.id] } : s
   );
 
-  // ===== 加载群成员 =====
+  // loadGroupMembers 专门服务于“查看群成员 / 群资料”等弹窗。
   const loadGroupMembers = useCallback(async () => {
     if (!active || active.type !== "group") return;
     try {
@@ -170,7 +180,8 @@ const Chat: React.FC = () => {
     }
   }, []);
 
-  // ===== 工具：解析消息数组 =====
+  // parseMessages 用于兼容后端返回的大小写差异和字段差异，
+  // 让后续渲染层永远消费统一的 Message 结构。
   const parseMessages = (raw: any[]): Message[] =>
     raw.map((m: any) => ({
       uuid: m.uuid ?? m.Uuid,
@@ -194,7 +205,7 @@ const Chat: React.FC = () => {
       readAt: m.readAt ?? m.ReadAt ?? null,
     }));
 
-  // ===== 加载历史消息 =====
+  // loadMessages 负责拉历史消息，并处理“首次进入会话”和“上拉加载更多”两条路径。
   const loadMessages = useCallback(
     async (sessionId: string, isLoadMore = false) => {
       const currentActive = sessions.find((s) => s.id === sessionId);
@@ -264,7 +275,9 @@ const Chat: React.FC = () => {
     [sessions, messagesMap, user?.uuid, scrollToBottom]
   );
 
-  // ===== WS 消息处理 =====
+  // handleIncomingMessage 是前端实时消息总入口。
+  // 所有服务端推送——包括普通聊天消息、系统事件、已读回执、群变更、通话信令——
+  // 都会先进入这里，再按 action/type 分流到不同状态更新逻辑。
   const handleIncomingMessage = useCallback(
     (msg: IncomingMessage) => {
       if (["call_invite", "call_answer", "call_candidate", "call_end"].includes((msg as any).action)) {
@@ -274,7 +287,7 @@ const Chat: React.FC = () => {
 
       const anyMsg = msg as any;
 
-      // 在线状态事件
+      // 在线状态事件：由后端在用户连接/断开时主动广播。
       if (anyMsg.action === "online_users" && Array.isArray(anyMsg.userIds)) {
         setOnlineUsers(new Set(anyMsg.userIds as string[]));
         return;
@@ -397,6 +410,9 @@ const Chat: React.FC = () => {
         readAt: null,
       };
 
+      // bucketId 决定这条消息应该归到哪个会话桶里。
+      // 私聊时，自己发出的消息按对方 id 分桶；收到的消息按发送方 id 分桶；
+      // 群聊时，统一按群 id 分桶。
       const isGroupMsg =
         (anyMsg.receiveId && sessionIndex[anyMsg.receiveId] === "group") ||
         (anyMsg.receiveId && groupIdSet.has(anyMsg.receiveId));
@@ -441,7 +457,7 @@ const Chat: React.FC = () => {
     [groupIdSet, sessionIndex, user?.uuid, loadGroupMembers, handleCallSignal, scrollToBottom, activeId]
   );
 
-  // ===== 加载联系人/群聊 =====
+  // loadContacts 会并行拉取“好友列表 + 已加入群聊”，然后组装成左侧会话栏数据源。
   const loadContacts = useCallback(async () => {
     try {
       const [userRes, groupRes] = await Promise.all([
@@ -549,6 +565,7 @@ const Chat: React.FC = () => {
   handleIncomingMessageRef.current = handleIncomingMessage;
 
   // ===== Effects =====
+  // 这一段可以重点学习：Chat 页面很多“初始化 / 同步 / 副作用”都是靠多个 useEffect 配合完成的。
   useEffect(() => {
     loadContacts();
     api.getNewContactList().then((res) => {
@@ -609,7 +626,8 @@ const Chat: React.FC = () => {
     }
   }, [activeId, sessions.length]);
 
-  // ✅ WebSocket 只在首次 / token 变化时建立连接，不跟随 myGroups 重建
+  // WebSocket 只在首次进入页面或 token 变化时建立连接。
+  // 如果把 myGroups 也放进依赖数组，会导致“群列表变化 -> 重建整条连接”的副作用。
   useEffect(() => {
     const token = getToken();
     if (!token) return;
@@ -625,7 +643,7 @@ const Chat: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 只在挂载时建立一次
 
-  // ✅ 群订阅：myGroups 变化时向已有连接补发 join_group，无需重建 WS
+  // 群订阅与“建连”拆开处理：连接复用，订阅单独补发。
   useEffect(() => {
     if (!wsRef.current || myGroups.length === 0) return;
     myGroups.forEach((g) => wsRef.current!.send({ action: "join_group", groupId: g.uuid }));
@@ -642,6 +660,8 @@ const Chat: React.FC = () => {
   };
 
   // ===== 布局计算 =====
+  // 桌面端同时显示左侧会话栏和右侧聊天区；
+  // 移动端只显示一个视图，通过 mobileView 切换。
   // 桌面：始终显示两栏；移动：按 mobileView 切换
   const showSidebar = !isMobile || mobileView === "sidebar";
   const showMain = !isMobile || mobileView === "chat";

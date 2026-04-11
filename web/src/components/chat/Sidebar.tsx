@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from "react";
 import type { SessionItem } from "../../types/chat";
 import { cn, toAbs } from "../../utils/chatUtils";
 
+// SidebarProps 封装了侧边栏需要消费的全部状态和动作。
+// 它本身只做 UI，不直接请求后端。
 interface SidebarProps {
   user: { nickname?: string; avatar?: string; uuid?: string } | null;
   avatarVersion: number;
@@ -21,6 +23,9 @@ interface SidebarProps {
   onShowJoinGroup: () => void;
 }
 
+// Sidebar 负责左侧“用户菜单 + 会话列表 + 主题切换”区域。
+// 这是一个典型的展示组件：自身维护少量 UI 状态（如菜单开关），
+// 真正的业务动作通过 props 回调交还给 Chat 页面处理。
 const Sidebar: React.FC<SidebarProps> = ({
   user,
   avatarVersion,
@@ -63,7 +68,8 @@ const Sidebar: React.FC<SidebarProps> = ({
     { label: "退出登录", action: onLogout, danger: true },
   ];
 
-  // ===== 主题色 token =====
+  // 这一组 token 是把深浅色主题差异收束到字符串变量里，
+  // 这样 JSX 结构本身更容易阅读。
   const bg = isDark ? "bg-[#2e2e2e]" : "bg-gray-50";
   const border = isDark ? "border-black/20" : "border-gray-200";
   const textMain = isDark ? "text-gray-200" : "text-gray-800";
@@ -159,7 +165,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* 会话列表 */}
+      {/* 会话列表：头像、未读数、在线状态等都在这里集中渲染 */}
       <div className="flex-1 overflow-y-auto">
         {sessions.length === 0 && (
           <div className={`${textSub} text-sm p-4 text-center`}>暂无联系人</div>

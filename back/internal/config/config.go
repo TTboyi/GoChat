@@ -14,12 +14,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// MainConfig 描述 HTTP 服务自身的基础信息。
 type MainConfig struct {
 	AppName string `toml:"appName"`
 	Host    string `toml:"host"`
 	Port    int    `toml:"port"`
 }
 
+// MysqlConfig 保存 MySQL 连接参数。
 type MysqlConfig struct {
 	Host         string `toml:"host"`
 	Port         int    `toml:"port"`
@@ -28,6 +30,7 @@ type MysqlConfig struct {
 	DatabaseName string `toml:"databaseName"`
 }
 
+// RedisConfig 保存 Redis 连接参数。
 type RedisConfig struct {
 	Host     string `toml:"host"`
 	Port     int    `toml:"port"`
@@ -35,6 +38,7 @@ type RedisConfig struct {
 	Db       int    `toml:"db"`
 }
 
+// AuthCodeConfig 预留给短信/验证码之类的第三方鉴权服务。
 type AuthCodeConfig struct {
 	AccessKeyID     string `toml:"accessKeyID"`
 	AccessKeySecret string `toml:"accessKeySecret"`
@@ -42,10 +46,12 @@ type AuthCodeConfig struct {
 	TemplateCode    string `toml:"templateCode"`
 }
 
+// LogConfig 保存日志输出路径。
 type LogConfig struct {
 	LogPath string `toml:"logPath"`
 }
 
+// KafkaConfig 描述消息队列相关配置。
 type KafkaConfig struct {
 	MessageMode string        `toml:"messageMode"`
 	HostPort    string        `toml:"hostPort"`
@@ -56,11 +62,13 @@ type KafkaConfig struct {
 	Timeout     time.Duration `toml:"timeout"`
 }
 
+// StaticSrcConfig 描述静态文件上传目录。
 type StaticSrcConfig struct {
 	StaticAvatarPath string `toml:"staticAvatarPath"`
 	StaticFilePath   string `toml:"staticFilePath"`
 }
 
+// Email 用于邮箱验证码登录流程。
 type Email struct {
 	SmtpHost string `toml:"smtp_host"` // 对应 smtp_host = "..."
 	SmtpPort int    `toml:"smtp_port"` // 对应 smtp_port = 465
@@ -68,6 +76,8 @@ type Email struct {
 	Password string `toml:"password"`  // 对应 password = "..."
 }
 
+// Config 是整个配置文件的聚合根。
+// 读取 TOML 后，业务代码统一通过 GetConfig() 拿到它。
 type Config struct {
 	MainConfig      `toml:"mainConfig"`
 	MysqlConfig     `toml:"mysqlConfig"`
@@ -81,6 +91,8 @@ type Config struct {
 
 var config *Config = new(Config)
 
+// LoadConfig 从约定路径读取 TOML 配置。
+// 这里使用全局单例，是为了让启动阶段和业务层都能方便访问同一份配置。
 func LoadConfig() error {
 	if _, err := toml.DecodeFile("./back/internal/config/config.toml", config); err != nil {
 		log.Fatal(err.Error())
@@ -89,6 +101,8 @@ func LoadConfig() error {
 	return nil
 }
 
+// GetConfig 懒加载配置。
+// 如果第一次调用时配置还没读入，就会自动触发 LoadConfig。
 func GetConfig() *Config {
 	if config == nil {
 		config = new(Config)
@@ -99,6 +113,8 @@ func GetConfig() *Config {
 
 var db *gorm.DB
 
+// InitDB 建立 GORM 连接，并在启动时自动迁移核心表结构。
+// 这个项目把表迁移放在启动入口里，意味着“服务启动成功”通常也代表“数据库结构可用”。
 func InitDB() {
 	c := GetConfig().MysqlConfig
 
@@ -129,6 +145,7 @@ func InitDB() {
 	fmt.Println("✅ 成功连接数据库并自动迁移表")
 }
 
+// GetDB 返回全局数据库连接，必要时自动初始化。
 func GetDB() *gorm.DB {
 	if db == nil {
 		InitDB()
@@ -138,7 +155,8 @@ func GetDB() *gorm.DB {
 
 var rdb *redis.Client
 
-// InitRedis 初始化 Redis 客户端
+// InitRedis 初始化 Redis 客户端并做一次 Ping。
+// 这样可以在服务启动阶段尽早暴露配置错误，而不是等到业务请求进来才失败。
 func InitRedis() {
 	c := GetConfig().RedisConfig
 
@@ -156,7 +174,7 @@ func InitRedis() {
 	fmt.Println("✅ 成功连接 Redis")
 }
 
-// GetRedis 获取 Redis 客户端
+// GetRedis 获取 Redis 客户端。
 func GetRedis() *redis.Client {
 	if rdb == nil {
 		InitRedis()

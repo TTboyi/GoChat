@@ -17,7 +17,9 @@ import (
 
 // ========= 供 client.go / ws.go 共用的消息结构 =========
 
-// 前端发来的消息（点对点 & 群聊通用）
+// ChatEnvelope 是“进入后端消息主链路前”的统一包裹。
+// WebSocket 层把前端 JSON 解析成它，之后无论是发 Kafka、分流到私聊/群聊，
+// 还是写库，都尽量围绕这个结构展开。
 type ChatEnvelope struct {
 	Type      int8   `json:"type"`
 	Content   string `json:"content,omitempty"`
@@ -30,7 +32,10 @@ type ChatEnvelope struct {
 	LocalId   string `json:"localId,omitempty"` // 前端生成，用于乐观更新
 }
 
-// 推送给前端的消息
+// OutgoingMessage 是发回前端的标准消息格式。
+// 它和数据库模型 Message 很像，但职责不同：
+// - Message 面向持久化；
+// - OutgoingMessage 面向前端实时展示。
 type OutgoingMessage struct {
 	Uuid       string `json:"uuid"`
 	LocalId    string `json:"localId,omitempty"`
@@ -47,6 +52,8 @@ type OutgoingMessage struct {
 	CreatedAt  int64  `json:"createdAt"`
 }
 
+// CallSignal 用于 WebRTC 信令转发。
+// 真正的音视频流不经过后端；后端只负责在双方之间转发 offer/answer/candidate 等控制消息。
 type CallSignal struct {
 	Action    string `json:"action"`   // call_invite / call_answer / call_candidate / call_end
 	CallId    string `json:"callId"`   // 通话唯一ID
@@ -60,23 +67,25 @@ type CallSignal struct {
 
 // ======================================================
 
-// Server 聊天主机
-// ✅ 改造：同一 userId 支持多个连接（多端登录）
+// Server 是内存态在线路由中心。
+// 即使当前消息主干已迁移到 Kafka，它仍然承担“在线连接管理、信令分发、群订阅状态”这些职责。
+// 改造后的 Clients 结构支持“同一 userId 多端同时在线”。
 type Server struct {
 	Clients  map[string][]*Client // 在线用户：userUuid -> []*Client（支持多端）
 	Mutex    *sync.Mutex
-	Transmit chan ChatEnvelope // 消息入口（client.Read()->这里）
+	Transmit chan ChatEnvelope // 旧版内存消息入口（当前主要作为演进痕迹保留）
 	Login    chan *Client
 	Logout   chan *Client
 }
 
-// groupMembers 记录每个群在线成员，groupMemsMu 保护并发访问
+// groupMembers 记录“当前哪些在线用户已经订阅了某个群”。
+// 这并不是群的真实成员表；真实成员仍以数据库为准。
 var (
 	groupMembers = make(map[string]map[string]bool) // groupId -> userId -> 在线状态
 	groupMemsMu  sync.RWMutex
 )
 
-// 全局唯一
+// ChatServer 是全局唯一的在线路由中心。
 var ChatServer = &Server{
 	Clients:  make(map[string][]*Client),
 	Mutex:    &sync.Mutex{},
@@ -85,6 +94,8 @@ var ChatServer = &Server{
 	Logout:   make(chan *Client, 128),
 }
 
+// AddUserToGroup 在内存中登记某个在线用户已订阅某个群。
+// 前端建立 WS 后会主动发送 join_group，让后端知道“这个连接愿意接收哪个群的推送”。
 func (s *Server) AddUserToGroup(userId, groupId string) {
 	groupMemsMu.Lock()
 	defer groupMemsMu.Unlock()
@@ -127,8 +138,8 @@ func (s *Server) Run() {
 	}
 }
 
-// 音视频通话
-// 新增方法
+// ForwardCallSignal 把通话控制消息转发给目标用户。
+// 这是“信令服务器”角色：只转发建立连接所需的控制数据，不承载媒体流本身。
 func (s *Server) ForwardCallSignal(from string, req ChatMessageRequest) {
 	sig := CallSignal{
 		Action:    req.Action,
@@ -152,6 +163,8 @@ func (s *Server) ForwardCallSignal(from string, req ChatMessageRequest) {
 
 // ============== 核心：路由 & 存库 ==============
 
+// routeAndPersist 根据 receiveId 判断消息是发给个人还是群，
+// 然后进入不同的持久化/分发逻辑。
 func (s *Server) routeAndPersist(env ChatEnvelope) error {
 	db := config.GetDB()
 
@@ -165,7 +178,10 @@ func (s *Server) routeAndPersist(env ChatEnvelope) error {
 	return s.handleDirect(db, env)
 }
 
-// 用"订阅表"或数据库判断是否为群
+// isGroupTarget 判断 receiveId 是否表示一个群。
+// 这里采用“两级判断”：
+// 1. 先查内存订阅表，速度快；
+// 2. 若内存里没有，再用数据库兜底。
 func (s *Server) isGroupTarget(db *gorm.DB, id string) bool {
 	if id == "" {
 		return false
@@ -185,7 +201,8 @@ func (s *Server) isGroupTarget(db *gorm.DB, id string) bool {
 	return false
 }
 
-// 处理点对点
+// handleDirect 处理点对点消息。
+// 它做三件事：确保会话存在、写入数据库、把消息实时推给发送方和接收方的在线端。
 func (s *Server) handleDirect(db *gorm.DB, env ChatEnvelope) error {
 	// 1) 确保会话（发起人->对方）
 	sessID, recvName, recvAvatar, err := ensureSessionForDirect(db, env.SendId, env.ReceiveId)
@@ -245,7 +262,8 @@ func (s *Server) handleDirect(db *gorm.DB, env ChatEnvelope) error {
 	return nil
 }
 
-// 处理群聊
+// handleGroup 处理群聊消息。
+// 和私聊相比，最大的区别是它会广播给当前已订阅该群的所有在线用户。
 func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 	var group model.GroupInfo
 	if err := db.Where("uuid = ?", env.ReceiveId).First(&group).Error; err != nil {
@@ -314,7 +332,7 @@ func (s *Server) handleGroup(db *gorm.DB, env ChatEnvelope) error {
 	return nil
 }
 
-// ✅ 推送给在线用户的所有连接（多端同步）
+// deliverToUser 将消息投递给某个用户的所有在线连接，实现多端同步。
 func (s *Server) deliverToUser(userId string, raw []byte) {
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()
@@ -356,6 +374,9 @@ func (s *Server) PushGroupDismiss(groupId string) {
 
 // ============== 会话兜底 & 基础查询 ==============
 
+// ensureSessionForDirect 确保私聊会话存在。
+// 这里的设计说明：消息并不会隐式“只存在于 message 表”；
+// session 表单独维护聊天列表项，让会话列表查询更直接。
 func ensureSessionForDirect(db *gorm.DB, sendId, recvId string) (sessionUuid, recvName, recvAvatar string, err error) {
 	// 先查是否已有
 	var sess model.Session
@@ -379,6 +400,7 @@ func ensureSessionForDirect(db *gorm.DB, sendId, recvId string) (sessionUuid, re
 	return sess.Uuid, sess.ReceiveName, sess.Avatar, nil
 }
 
+// ensureSessionForGroup 确保“某用户看见的某个群聊会话”存在。
 func ensureSessionForGroup(db *gorm.DB, sendId string, group *model.GroupInfo) (sessionUuid, groupName, groupAvatar string, err error) {
 	// 先查
 	var sess model.Session
@@ -400,6 +422,7 @@ func ensureSessionForGroup(db *gorm.DB, sendId string, group *model.GroupInfo) (
 	return sess.Uuid, sess.ReceiveName, sess.Avatar, nil
 }
 
+// loadUserBasic 读取消息渲染所需的最小用户资料。
 func loadUserBasic(db *gorm.DB, userId string) (nickname, avatar string, err error) {
 	var u model.UserInfo
 	if e := db.Where("uuid = ?", userId).First(&u).Error; e != nil {
@@ -410,12 +433,15 @@ func loadUserBasic(db *gorm.DB, userId string) (nickname, avatar string, err err
 
 // ============== 工具 ==============
 
+// newIDWithPrefix 生成一个带业务前缀的短 ID。
+// M/S/SYS 这类前缀可以帮助阅读数据库记录时快速判断对象类型。
 func newIDWithPrefix(p string) string {
 	// 生成 19 位随机（去掉 - 的 uuid），再加 1 位前缀，正好 20
 	raw := strings.ReplaceAll(uuid.New().String(), "-", "")
 	return p + raw[:19]
 }
 
+// nz 是一个“小而频繁”的兜底工具：当字符串为空时返回默认值。
 func nz(s, def string) string {
 	if s == "" {
 		return def
@@ -423,7 +449,8 @@ func nz(s, def string) string {
 	return s
 }
 
-// ✅ 添加客户端（多端：同一userId可以有多个连接）
+// AddClient 把一个新的 WebSocket 连接挂到在线表里。
+// 除了保存连接外，它还会主动同步在线用户列表，并在“某用户首次上线”时广播在线事件。
 func (s *Server) AddClient(c *Client) {
 	s.Mutex.Lock()
 
@@ -489,7 +516,8 @@ func keysOfClients(m map[string][]*Client) []string {
 	return keys
 }
 
-// 在 server.go 里加一个工具函数
+// removeUserFromAllGroups 清理用户在内存订阅表中的所有群订阅。
+// 当用户最后一个连接断开时，不应继续向该用户推送群消息。
 func (s *Server) removeUserFromAllGroups(userId string) {
 	groupMemsMu.Lock()
 	defer groupMemsMu.Unlock()
@@ -503,7 +531,8 @@ func (s *Server) removeUserFromAllGroups(userId string) {
 	}
 }
 
-// ✅ RemoveClient 精确移除指定连接（通过指针匹配）
+// RemoveClient 精确移除某一个连接。
+// 如果这已经是该用户最后一个连接，还会触发离线广播。
 func (s *Server) RemoveClient(c *Client) {
 	s.Mutex.Lock()
 
@@ -543,7 +572,7 @@ func (s *Server) RemoveClient(c *Client) {
 	s.Mutex.Unlock()
 }
 
-// RemoveAllClients 移除指定用户的所有连接（管理员/登出用）
+// RemoveAllClients 强制移除某个用户的所有连接，常见于主动登出或管理员踢下线。
 func (s *Server) RemoveAllClients(userId string) {
 	s.Mutex.Lock()
 	conns, ok := s.Clients[userId]
@@ -572,7 +601,7 @@ func (s *Server) RemoveAllClients(userId string) {
 	s.Mutex.Unlock()
 }
 
-// DeliverToUser 导出版（供其它包推送控制消息用）
+// DeliverToUser 是对外暴露的推送入口，供其它包发送控制消息或系统通知。
 func (s *Server) DeliverToUser(userId string, raw []byte) {
 	s.Mutex.Lock()
 	defer s.Mutex.Unlock()

@@ -1,6 +1,7 @@
 import type { Message } from "../types/chat";
 import { API_BASE } from "../config";
 
+// cn 是最轻量的 className 拼接工具。
 export const cn = (...a: Array<string | false | undefined>) =>
   a.filter(Boolean).join(" ");
 
@@ -11,6 +12,8 @@ export const toAbs = (rel?: string): string => {
   return `${API_BASE}${rel}`;
 };
 
+// save/loadMessagesToStorage 把消息缓存到 localStorage，
+// 这样刷新页面后还能保留最近浏览过的会话内容。
 export const saveMessagesToStorage = (map: Record<string, Message[]>) => {
   try {
     localStorage.setItem("chat_messages", JSON.stringify(map));
@@ -26,6 +29,7 @@ export const loadMessagesFromStorage = (): Record<string, Message[]> => {
   }
 };
 
+// activeId 表示“上次离开页面时停留在哪个会话”。
 export const saveActiveId = (id: string) => {
   if (id) localStorage.setItem("chat_activeId", id);
 };
@@ -37,6 +41,7 @@ export const loadActiveId = (): string => {
 // ===== 备注管理（localStorage，key: contact_remarks）=====
 const REMARK_KEY = "contact_remarks";
 
+// 备注是纯前端本地能力，不依赖后端存储。
 export const loadRemarks = (): Record<string, string> => {
   try {
     const raw = localStorage.getItem(REMARK_KEY);
@@ -62,6 +67,8 @@ export const getRemark = (userId: string): string => {
   return loadRemarks()[userId] || "";
 };
 
+// clearContactData 用于删除好友后的本地收尾：
+// 既删掉备注，也把本地消息桶一并清空。
 /** 删除好友时同时清除其备注和本地消息 */
 export const clearContactData = (
   userId: string,

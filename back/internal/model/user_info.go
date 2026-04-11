@@ -6,6 +6,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// UserInfo 对应系统中的“用户主表”。
+// 这个模型同时承担了登录资料、展示资料、权限状态三类信息，
+// 因此在阅读 controller/service 时会频繁见到它。
 type UserInfo struct {
 	Id        int64          `gorm:"column:id;primaryKey;comment:自增id"`
 	Uuid      string         `gorm:"column:uuid;uniqueIndex;type:char(8);not null;comment:用户唯一id"`
@@ -23,6 +26,7 @@ type UserInfo struct {
 	Status    int8           `gorm:"column:status;not null;comment:状态，0.正常，1.禁用"`
 }
 
+// TableName 显式指定表名，避免 GORM 使用默认复数推断。
 func (UserInfo) TableName() string {
 	return "user_info"
 }

@@ -8,9 +8,12 @@ import (
 	"time"
 )
 
-// 获取双方聊天记录（支持分页：beforeTime为Unix时间戳，0表示最新）
+// GetMessageList 获取两个人之间的历史消息。
+// 它按 created_at 倒序查数据库，再由前端在展示前 reverse，
+// 这样“加载更多历史消息”时更容易基于最老一条消息的时间戳做分页。
 func GetMessageList(userId, targetId string, limit int, beforeTime int64) ([]model.Message, error) {
-	// 跳过Redis直接查DB，以支持分页和撤回状态
+	// 这里直接查 DB，而不是先查 Redis，
+	// 因为历史消息列表通常需要准确的分页、撤回状态和已读状态。
 	db := config.GetDB()
 	var list []model.Message
 
@@ -29,7 +32,7 @@ func GetMessageList(userId, targetId string, limit int, beforeTime int64) ([]mod
 	return list, err
 }
 
-// 获取群聊消息（支持分页）
+// GetGroupMessageList 获取群聊历史消息，分页逻辑与私聊保持一致。
 func GetGroupMessageList(groupId string, limit int, beforeTime int64) ([]model.Message, error) {
 	db := config.GetDB()
 	var list []model.Message
@@ -46,12 +49,13 @@ func GetGroupMessageList(groupId string, limit int, beforeTime int64) ([]model.M
 	return list, err
 }
 
+// SaveMessage 作为最薄的一层持久化包装，主要为了给其它调用方提供统一入口。
 func SaveMessage(msg *model.Message) error {
 	db := config.GetDB()
 	return db.Create(msg).Error
 }
 
-// RecallMessage 撤回消息（10分钟内）
+// RecallMessage 实现“发送后 10 分钟内可撤回”的业务规则。
 func RecallMessage(senderId, msgId string) error {
 	db := config.GetDB()
 	var msg model.Message
@@ -70,7 +74,7 @@ func RecallMessage(senderId, msgId string) error {
 	}).Error
 }
 
-// MarkMessagesRead 标记某会话消息为已读（接收方调用），返回被标记的最早消息发送者ID
+// MarkMessagesRead 把某个会话里“对方发给我、我还没读”的消息统一标为已读。
 func MarkMessagesRead(receiverId, senderId string) error {
 	db := config.GetDB()
 	now := time.Now()
@@ -79,7 +83,7 @@ func MarkMessagesRead(receiverId, senderId string) error {
 		Update("read_at", now).Error
 }
 
-// GetUnreadCount 获取某会话未读消息数
+// GetUnreadCount 统计某个会话的未读消息数，常用于会话列表角标。
 func GetUnreadCount(ctx context.Context, receiverId, senderId string) (int64, error) {
 	db := config.GetDB()
 	var count int64
@@ -89,7 +93,8 @@ func GetUnreadCount(ctx context.Context, receiverId, senderId string) (int64, er
 	return count, err
 }
 
-// ClearConversation 物理删除两人之间的所有消息（删除好友时调用）
+// ClearConversation 在删除好友时把双方私聊消息一并清除。
+// 这里做的是物理删除，所以之后历史记录无法恢复。
 func ClearConversation(userId, targetId string) error {
 	db := config.GetDB()
 	return db.

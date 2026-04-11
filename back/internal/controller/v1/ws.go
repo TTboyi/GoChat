@@ -21,12 +21,15 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  2048,
 	WriteBufferSize: 2048,
 	CheckOrigin: func(r *http.Request) bool {
-		// 生产环境请替换成你的前端域名
+		// 这里为了开发方便直接放行所有来源。
+		// 真正部署时通常要收紧到可信前端域名，否则任何站点都能尝试建立 WS 连接。
 		return true
 	},
 }
 
-// ✅ WebSocket 登录：GET /wss?token=<JWT>
+// WsLogin 负责完成 WebSocket 握手前的认证。
+// 浏览器会先带着 access token 访问 /wss，后端验证 token 和黑名单后，
+// 才把 HTTP 请求升级成一条长期存活的 WebSocket 连接。
 func WsLogin(c *gin.Context) {
 	token := c.Query("token")
 	if token == "" {
@@ -72,13 +75,14 @@ func WsLogin(c *gin.Context) {
 	}
 	chat.ChatServer.AddClient(client)
 
-	// 5️⃣ 启动读写协程
+	// 5️⃣ 启动读写协程。
+	// 一个协程专门读，一个协程专门写，是 WebSocket 服务器常见的并发模型。
 	go client.Read()
 	go client.Write()
 	log.Printf("解析 token 成功: %+v\n", claims)
 }
 
-// ✅ 用户主动退出 WebSocket
+// WsLogout 允许用户主动断开自己的所有 WebSocket 连接。
 func WsLogout(c *gin.Context) {
 	userId := c.GetString("userId")
 	if userId == "" {
@@ -102,8 +106,9 @@ const (
 	turnTTL    = 24 * time.Hour            // 凭证有效期 24 小时
 )
 
-// GetTurnCredentials 返回 TURN 服务器的时效性动态凭证
-// GET /turn/credentials
+// GetTurnCredentials 返回 TURN 服务器的时效性动态凭证。
+// WebRTC 在复杂网络环境下需要 TURN 中继；这个接口的作用就是在用户真正发起通话前，
+// 临时生成一组可用但会过期的凭证，而不是把长期密钥直接暴露给前端。
 func GetTurnCredentials(c *gin.Context) {
 	userId := c.GetString("userId")
 	if userId == "" {
@@ -111,11 +116,12 @@ func GetTurnCredentials(c *gin.Context) {
 		return
 	}
 
-	// 1. 生成 username = 过期时间戳:userId
+	// 1. 生成 username = 过期时间戳:userId。
+	//    这种格式是 TURN REST API 的常见约定，服务端可据此判断凭证是否过期。
 	expiry := time.Now().Add(turnTTL).Unix()
 	username := fmt.Sprintf("%d:%s", expiry, userId)
 
-	// 2. 用 HMAC-SHA1 生成 password
+	// 2. 用 static-auth-secret 做 HMAC，得到与 username 绑定的短期密码。
 	mac := hmac.New(sha1.New, []byte(turnSecret))
 	mac.Write([]byte(username))
 	password := base64.StdEncoding.EncodeToString(mac.Sum(nil))

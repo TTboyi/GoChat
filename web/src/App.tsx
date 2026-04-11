@@ -9,37 +9,38 @@ import CaptchaLogin from "./pages/CaptchaLogin";
 import Chat from "./pages/Chat";
 import Profile from "./pages/Profile";
 
+// App 只关心“路由层面的页面切换”。
+// 真正的业务逻辑会继续下沉到各个 page / component / hook 中。
 function App() {
   return (
-    
       <Router>
         <AuthProvider>
-        <Routes>
-          <Route path="/" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/captcha-login" element={<CaptchaLogin />} />
+          <Routes>
+            {/* 公开页面：未登录也能访问 */}
+            <Route path="/" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/captcha-login" element={<CaptchaLogin />} />
 
-          {/* 登录保护 */}
-          <Route
-            path="/chat"
-            element={
-              <ProtectedRoute>
-                <Chat />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute>
-                <Profile />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+            {/* 受保护页面：必须先通过 AuthContext 确认已登录 */}
+            <Route
+              path="/chat"
+              element={
+                <ProtectedRoute>
+                  <Chat />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/profile"
+              element={
+                <ProtectedRoute>
+                  <Profile />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
         </AuthProvider>
       </Router>
-    
   );
 }
 

@@ -8,14 +8,17 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Client 表示一个 WebSocket 客户端
+// Client 表示一个具体的 WebSocket 连接。
+// 注意这里是一条连接，不是一个用户；同一用户可能同时拥有多个 Client。
 type Client struct {
 	Conn     *websocket.Conn
 	Uuid     string
 	SendBack chan []byte // Server → 客户端
 }
 
-// ChatMessageRequest 前端发来的消息结构
+// ChatMessageRequest 对应前端通过 WebSocket 发来的 JSON。
+// 它把“聊天消息、群订阅、通话信令”三类行为统一装进一个入口结构里，
+// 然后在 Read 中根据 Action 再细分处理。
 type ChatMessageRequest struct {
 	Type      int8   `json:"type"`
 	Content   string `json:"content"`
@@ -41,7 +44,11 @@ const (
 	writeWait    = 10 * time.Second  // 写超时
 )
 
-// Read 循环监听前端消息（含心跳 Ping）
+// Read 持续读取前端发来的消息。
+// 它的职责不是直接执行业务，而是做协议层分流：
+// - join_group：更新内存订阅；
+// - call_*：转发音视频信令；
+// - 默认：组装成 ChatEnvelope，交给 Kafka 主链路。
 func (c *Client) Read() {
 	defer func() {
 		ChatServer.RemoveClient(c)
@@ -143,8 +150,9 @@ func (c *Client) Write() {
 			}
 
 		case <-ticker.C:
-			// 发送 Ping 心跳帧，保持连接
-			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+		// 发送 Ping 心跳帧，保持连接；
+		// 前面的 PongHandler 会在收到客户端 Pong 时延长读超时。
+		c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				log.Printf("❌ Ping 发送失败，连接断开: %v", err)
 				return

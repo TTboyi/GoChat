@@ -5,6 +5,7 @@ import type { ChatWebSocket } from "../api/socket";
 import { callCandidate, callEnd } from "../api/socket";
 import api from "../api/api";
 
+// 空闲态是这个 Hook 的“复位快照”，通话结束后会回到这里。
 const IDLE_CALL_STATE: CallState = {
   callId: null,
   peerId: null,
@@ -13,6 +14,7 @@ const IDLE_CALL_STATE: CallState = {
   isCaller: false,
 };
 
+// IncomingCall 描述来电弹窗真正需要的信息。
 export interface IncomingCall {
   callId: string;
   from: string;
@@ -21,7 +23,8 @@ export interface IncomingCall {
   offer: string;
 }
 
-// ✅ 动态获取 TURN 凭证
+// fetchIceServers 先准备公开 STUN，再尝试向后端要动态 TURN 凭证。
+// 这样就算 TURN 服务暂时不可用，局域网/简单网络条件下仍有机会建立直连。
 async function fetchIceServers(): Promise<RTCIceServer[]> {
   const stunServers: RTCIceServer[] = [
     { urls: "stun:stun1.l.google.com:19302" },
@@ -42,7 +45,9 @@ async function fetchIceServers(): Promise<RTCIceServer[]> {
   return stunServers;
 }
 
-// ✅ 挂载媒体流（含重试）
+// attachStream 负责把 MediaStream 挂到 video/audio 元素上。
+// 之所以带重试，是因为 React 渲染和 WebRTC 回调并不是严格同步的：
+// ontrack 触发时，video 节点未必已经出现在 DOM 中。
 function attachStream(
   videoRef: RefObject<HTMLVideoElement | null>,
   stream: MediaStream,
@@ -59,6 +64,11 @@ function attachStream(
   tryAttach(retries);
 }
 
+// useWebRTC 把一整套“音视频通话状态机”封装进 Hook。
+// 页面只需要提供当前 WS 引用和 userId，就能得到：
+// - 发起/接听/拒绝/挂断通话的方法
+// - 本地/远端视频节点引用
+// - 当前通话状态和来电信息
 export function useWebRTC(
   wsRef: RefObject<ChatWebSocket | null>,
   userId: string | undefined
@@ -73,16 +83,17 @@ export function useWebRTC(
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  // ✅ ICE 候选缓冲：解决候选提前到达（未建立 PC 或未 setRemoteDescription）被丢弃的问题
+  // ICE candidate 可能早于 RemoteDescription 到达。
+  // 如果直接 addIceCandidate，会因为时序不对而失败，所以先暂存，等时机成熟再 flush。
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
-  // ✅ 标记 RemoteDescription 是否已经设置完毕（只有设置后才能安全 addIceCandidate）
+  // 只有 setRemoteDescription 完成后，addIceCandidate 才是安全的。
   const remoteDescReadyRef = useRef(false);
 
   useEffect(() => {
     callStateRef.current = callState;
   }, [callState]);
 
-  // ✅ 将缓冲的候选统一 apply 到 PC
+  // flushPendingCandidates 把前面积压的 ICE 候选补到 PeerConnection 上。
   const flushPendingCandidates = useCallback(async (pc: RTCPeerConnection) => {
     const pending = [...pendingCandidatesRef.current];
     pendingCandidatesRef.current = [];
@@ -96,6 +107,7 @@ export function useWebRTC(
     }
   }, []);
 
+  // cleanupCall 用于“彻底收尾”：清状态、关连接、停本地采集、清空视频元素。
   const cleanupCall = useCallback(() => {
     setCallState(IDLE_CALL_STATE);
     pendingCandidatesRef.current = [];
@@ -112,7 +124,11 @@ export function useWebRTC(
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
   }, []);
 
-  // ✅ 主叫：发起通话
+  // startCall 是主叫路径：
+  // 1. 申请媒体权限；
+  // 2. 建立 RTCPeerConnection；
+  // 3. 生成 offer；
+  // 4. 通过 WebSocket 把 offer 发给对方。
   const startCall = useCallback(
     async (callType: "audio" | "video", active: SessionItem) => {
       const ws = wsRef.current;
@@ -190,6 +206,7 @@ export function useWebRTC(
     [wsRef]
   );
 
+  // endCall 既通知对端挂断，也做本地清理。
   const endCall = useCallback(() => {
     const ws = wsRef.current;
     const { peerId, callId } = callStateRef.current;
@@ -197,7 +214,8 @@ export function useWebRTC(
     cleanupCall();
   }, [wsRef, cleanupCall]);
 
-  // ✅ 被叫接听
+  // acceptIncomingCall 是被叫路径：
+  // 先设置远端 offer，再创建 answer 回给主叫。
   const acceptIncomingCall = useCallback(async () => {
     const pending = incomingCall;
     if (!pending) return;
@@ -296,6 +314,8 @@ export function useWebRTC(
 
   const handleCallSignal = useCallback(
     async (msg: any) => {
+      // handleCallSignal 是整个 Hook 的“事件分发器”。
+      // Chat 页面收到所有 call_* WebSocket 消息后，都会交给这里处理。
       console.log("📨 收到信令:", msg);
       const { action, from, callType, callId, accept, content } = msg;
       const pc = peerRef.current;
@@ -338,7 +358,7 @@ export function useWebRTC(
           if (from === me || !content) return;
           const ice = JSON.parse(content);
 
-          // ✅ 若 PC 未就绪或 remoteDescription 尚未设置，先缓冲
+          // 如果此时 PeerConnection 还没准备好，先缓冲，避免因为时序问题丢候选。
           if (!pc || !remoteDescReadyRef.current) {
             console.log("📦 缓冲 ICE 候选（PC 或 remoteDesc 未就绪）");
             pendingCandidatesRef.current.push(ice);
