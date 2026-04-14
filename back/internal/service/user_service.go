@@ -19,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const userInfoCachePrefix = "user_info:"
+const userInfoCachePrefix = "user_info_v2:"
 const userInfoCacheTTL = 15 * time.Minute
 
 func RegisterUser(db *gorm.DB, user *model.UserInfo) error {
