@@ -30,7 +30,7 @@ logPath = "your log path"
 [kafkaConfig]
 messageMode = "channel"
 hostPort = "127.0.0.1:9092"
-chatTopic = "chat_message"
+chatTopic = "chat.message"
 partition = 0
 timeout = 1
 
