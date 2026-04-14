@@ -252,6 +252,8 @@ export default {
   getAllGroups: () => api.get("/admin/groups"),
   adminDismissGroup: (id: string) => api.delete(`/admin/groups/${id}`),
   getSystemStats: () => api.get("/admin/stats"),
+  getAdminDailyStats: (days: number = 7) =>
+    api.get("/admin/stats/daily", { params: { days } }),
 
   // ================= TURN 服务器动态凭证 =================
   // WebRTC Hook 会在真正发起/接听通话前调用它，动态获取 ICE server 配置。

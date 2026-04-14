@@ -2,7 +2,7 @@ package chat
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -65,9 +65,9 @@ func (c *Client) Read() {
 		_, data, err := c.Conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("❌ Read 非正常断开: %v", err)
+				slog.Warn("ws_read_error", "user_id", c.Uuid, "err", err)
 			} else {
-				log.Printf("ℹ️ Read 连接关闭: %v", err)
+				slog.Info("ws_closed", "user_id", c.Uuid, "err", err)
 			}
 			break
 		}
@@ -75,24 +75,20 @@ func (c *Client) Read() {
 		var req ChatMessageRequest
 
 		if err := json.Unmarshal(data, &req); err != nil {
-			log.Printf("❌ 无法解析前端消息: %v", err)
+			slog.Warn("ws_parse_error", "user_id", c.Uuid, "err", err)
 			continue
 		}
-		log.Printf("🧩 收到前端 action=%q content len=%d", req.Action, len(req.Content))
 
 		switch req.Action {
 		case "join_group":
 			if req.GroupId == "" {
-				log.Printf("⚠️ join_group 缺少 groupId")
+				slog.Warn("join_group_missing_id", "user_id", c.Uuid)
 				continue
 			}
 			ChatServer.AddUserToGroup(c.Uuid, req.GroupId)
-			log.Printf("✅ 用户 %s 成功 join_group %s", c.Uuid, req.GroupId)
 			continue
 
 		case "call_invite", "call_answer", "call_candidate", "call_end":
-			// 音视频信令转发
-			log.Printf("✅ 转发通话信令 action=%s to=%s", req.Action, req.ReceiveId)
 			ChatServer.ForwardCallSignal(c.Uuid, req)
 			continue
 
@@ -109,12 +105,7 @@ func (c *Client) Read() {
 				LocalId:   req.LocalId,
 			}
 
-			log.Printf("📤 Send Kafka msg send=%s recv=%s type=%d content=%q",
-				env.SendId,
-				env.ReceiveId,
-				env.Type,
-				env.Content,
-			)
+			slog.Info("msg_send", "send_id", env.SendId, "recv_id", env.ReceiveId, "type", env.Type)
 
 			// ✅ 1. 发 Kafka（新主链路）
 			if ChatKafkaProducer != nil {
@@ -145,7 +136,7 @@ func (c *Client) Write() {
 				return
 			}
 			if err := c.Conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				log.Printf("❌ Write 错误: %v", err)
+				slog.Warn("ws_write_error", "user_id", c.Uuid, "err", err)
 				return
 			}
 
@@ -154,10 +145,9 @@ func (c *Client) Write() {
 		// 前面的 PongHandler 会在收到客户端 Pong 时延长读超时。
 		c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				log.Printf("❌ Ping 发送失败，连接断开: %v", err)
+				slog.Warn("ws_ping_error", "user_id", c.Uuid, "err", err)
 				return
 			}
-			log.Printf("💓 Ping -> %s", c.Uuid)
 		}
 	}
 }

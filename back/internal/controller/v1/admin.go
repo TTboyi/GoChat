@@ -1,8 +1,10 @@
 package v1
 
 import (
+	"chatapp/back/internal/chat"
 	"chatapp/back/internal/service"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -55,12 +57,33 @@ func AdminDismissGroup(c *gin.Context) {
 }
 
 func GetSystemStats(c *gin.Context) {
-	stats, err := service.GetSystemStats()
+	// 从 ChatServer 实时获取在线用户数，避免 service 层直接依赖 chat 包
+	chat.ChatServer.Mutex.Lock()
+	onlineUsers := int64(len(chat.ChatServer.Clients))
+	chat.ChatServer.Mutex.Unlock()
+
+	stats, err := service.GetSystemStats(onlineUsers)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取失败"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": stats})
+}
+
+func GetDailyStats(c *gin.Context) {
+	days := 7
+	if d := c.Query("days"); d != "" {
+		if n, err := strconv.Atoi(d); err == nil {
+			days = n
+		}
+	}
+
+	data, err := service.GetDailyStats(days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": data})
 }
 
 func RequireAdmin(c *gin.Context) {
@@ -71,3 +94,4 @@ func RequireAdmin(c *gin.Context) {
 		return
 	}
 }
+

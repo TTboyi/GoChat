@@ -46,9 +46,16 @@ type AuthCodeConfig struct {
 	TemplateCode    string `toml:"templateCode"`
 }
 
-// LogConfig 保存日志输出路径。
+// LogConfig 保存日志文件输出配置。
 type LogConfig struct {
+	// LogPath 是日志文件路径，留空则只写 stdout。
 	LogPath string `toml:"logPath"`
+	// MaxSizeMB 单个日志文件最大大小（MB），超出后轮转。
+	MaxSizeMB int `toml:"maxSizeMB"`
+	// MaxAgeDays 保留最近几天的旧日志文件。
+	MaxAgeDays int `toml:"maxAgeDays"`
+	// MaxBackups 最多保留几个旧日志文件。
+	MaxBackups int `toml:"maxBackups"`
 }
 
 // KafkaConfig 描述消息队列相关配置。

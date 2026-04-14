@@ -26,6 +26,11 @@ func main() {
 	if err := config.LoadConfig(); err != nil {
 		log.Fatal("加载配置失败: ", err)
 	}
+
+	// 2a) 初始化结构化日志（slog），需在 DB/Redis 之前，让后续模块都能用上
+	logCfg := config.GetConfig().LogConfig
+	utils.InitLogger(logCfg.LogPath, logCfg.MaxSizeMB, logCfg.MaxAgeDays, logCfg.MaxBackups)
+
 	config.InitDB()
 
 	// 2) 初始化全局 JWT：HTTP 鉴权、刷新 token、WebSocket 握手都会复用它。

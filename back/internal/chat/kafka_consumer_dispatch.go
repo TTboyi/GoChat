@@ -3,7 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -15,7 +15,7 @@ type DispatcherConsumer struct {
 }
 
 func StartDispatcherConsumer(brokers []string, group, topic string) {
-	log.Println("🚨 StartDispatcherConsumer CALLED")
+	slog.Info("kafka_dispatcher_start", "group", group, "topic", topic)
 
 	cfg := sarama.NewConfig()
 	cfg.Version = sarama.V2_1_0_0
@@ -30,17 +30,17 @@ func StartDispatcherConsumer(brokers []string, group, topic string) {
 		for {
 			client, err := sarama.NewConsumerGroup(brokers, group, cfg)
 			if err != nil {
-				log.Printf("❌ create dispatcher consumer failed: %v", err)
+				slog.Error("kafka_consumer_create_failed", "group", group, "err", err)
 				time.Sleep(3 * time.Second)
 				continue
 			}
 
-			log.Println("🟡 Dispatcher Consumer created")
+			slog.Info("kafka_consumer_ready", "group", group)
 
 			err = client.Consume(context.Background(), []string{topic}, consumer)
 			client.Close()
 			if err != nil {
-				log.Printf("❌ dispatcher consume error: %v", err)
+				slog.Error("kafka_consume_error", "group", group, "err", err)
 				time.Sleep(3 * time.Second)
 			}
 		}
@@ -55,23 +55,16 @@ func (c *DispatcherConsumer) ConsumeClaim(
 	claim sarama.ConsumerGroupClaim,
 ) error {
 
-	log.Printf("🟡 Dispatcher ConsumeClaim START")
+	slog.Info("kafka_claim_start", "group", c.group, "topic", c.topic)
 
 	for msg := range claim.Messages() {
-		log.Printf("🟢 Dispatcher got kafka msg key=%s valueLen=%d",
-			string(msg.Key),
-			len(msg.Value),
-		)
-
 		var km KafkaMessage
 		if err := json.Unmarshal(msg.Value, &km); err != nil {
-			log.Printf("❌ Dispatcher decode failed: %v", err)
+			slog.Error("kafka_decode_failed", "group", c.group, "err", err)
 			continue
 		}
 
-		log.Printf("🟢 Dispatcher decoded send=%s recv=%s content=%q",
-			km.SendId, km.ReceiveId, km.Content,
-		)
+		slog.Info("kafka_dispatch", "send_id", km.SendId, "recv_id", km.ReceiveId, "type", km.Type)
 
 		dispatchKafkaMessage(&km)
 

@@ -52,6 +52,7 @@ func initAdminRoutes(rg *gin.RouterGroup) {
 			admin.GET("/groups", v1.GetAllGroups)
 			admin.DELETE("/groups/:id", v1.AdminDismissGroup)
 			admin.GET("/stats", v1.GetSystemStats)
+			admin.GET("/stats/daily", v1.GetDailyStats)
 		}
 	}
 }
@@ -134,7 +135,10 @@ func initWsRoutes(r *gin.RouterGroup) {
 // 3. 最后结合 controller/service 追具体业务实现。
 func InitRouter() *gin.Engine {
 	jwt := utils.GetJWT()
-	r := gin.Default()
+	// 用 gin.New() 替代 gin.Default()，自行注册 Recovery 和自定义请求日志中间件
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.Use(middleware.RequestLogger())
 	r.Use(middleware.CORSMiddleware())
 
 	// r.Use(cors.New(cors.Config{

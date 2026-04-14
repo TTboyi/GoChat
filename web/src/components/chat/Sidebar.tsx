@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import type { SessionItem } from "../../types/chat";
 import { cn, toAbs } from "../../utils/chatUtils";
 
 // SidebarProps 封装了侧边栏需要消费的全部状态和动作。
 // 它本身只做 UI，不直接请求后端。
 interface SidebarProps {
-  user: { nickname?: string; avatar?: string; uuid?: string } | null;
+  user: { nickname?: string; avatar?: string; uuid?: string; is_admin?: boolean } | null;
   avatarVersion: number;
   sessions: SessionItem[];
   activeId: string;
@@ -46,6 +47,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -64,6 +66,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     { label: "添加好友", action: onShowAddFriend },
     { label: "创建群聊", action: onShowCreateGroup },
     { label: "加入群聊", action: onShowJoinGroup },
+    ...(user?.is_admin
+      ? [{ divider: false, label: "🛠 管理后台", action: () => navigate("/admin") }]
+      : []),
     { divider: true },
     { label: "退出登录", action: onLogout, danger: true },
   ];

@@ -3,7 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/IBM/sarama"
@@ -20,7 +20,7 @@ func StartCacheConsumer(brokers []string, group, topic string) {
 		for {
 			client, err := sarama.NewConsumerGroup(brokers, group, cfg)
 			if err != nil {
-				log.Printf("❌ Cache consumer create failed: %v", err)
+				slog.Error("kafka_consumer_create_failed", "group", group, "err", err)
 				time.Sleep(time.Second)
 				continue
 			}
@@ -28,7 +28,7 @@ func StartCacheConsumer(brokers []string, group, topic string) {
 			err = client.Consume(context.Background(), []string{topic}, &CacheConsumer{})
 			client.Close()
 			if err != nil {
-				log.Printf("❌ Cache consume error: %v", err)
+				slog.Error("kafka_consume_error", "group", group, "err", err)
 				time.Sleep(3 * time.Second)
 			}
 		}
@@ -46,12 +46,12 @@ func (c *CacheConsumer) ConsumeClaim(
 	for msg := range claim.Messages() {
 		var km KafkaMessage
 		if err := json.Unmarshal(msg.Value, &km); err != nil {
-			log.Printf("❌ Cache decode failed: %v", err)
+			slog.Error("kafka_decode_failed", "consumer", "cache", "err", err)
 			continue
 		}
 
 		if err := cacheMessage(&km); err != nil {
-			log.Printf("❌ Cache failed msgId=%s err=%v", km.MsgId, err)
+			slog.Error("kafka_cache_failed", "msg_id", km.MsgId, "err", err)
 			continue
 		}
 

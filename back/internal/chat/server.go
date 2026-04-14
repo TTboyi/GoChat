@@ -3,7 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -103,7 +103,7 @@ func (s *Server) AddUserToGroup(userId, groupId string) {
 		groupMembers[groupId] = make(map[string]bool)
 	}
 	groupMembers[groupId][userId] = true
-	log.Printf("✅ 用户 %s 已加入群订阅 %s", userId, groupId)
+	slog.Info("join_group", "user_id", userId, "group_id", groupId)
 }
 
 // Run 启动消息循环
@@ -116,7 +116,7 @@ func (s *Server) Run() {
 			s.Clients[client.Uuid] = append(s.Clients[client.Uuid], client)
 			s.Mutex.Unlock()
 
-			log.Printf("用户 %s 登录\n", client.Uuid)
+			slog.Info("ws_login", "user_id", client.Uuid)
 			// 给用户一个欢迎消息
 			msg := fmt.Sprintf("欢迎用户 %s 加入聊天室", client.Uuid)
 			client.SendBack <- []byte(msg)
@@ -124,13 +124,13 @@ func (s *Server) Run() {
 		// 客户端退出（WebSocket 断开）
 		case client := <-s.Logout:
 			s.RemoveClient(client)
-			log.Printf("🔴 用户 %s WebSocket 断开\n", client.Uuid)
+			slog.Info("ws_logout", "user_id", client.Uuid)
 
 		// 收到消息
 		case env := <-s.Transmit:
 			// 统一走路由 + 入库 + 下发（点对点/群聊都在这里处理）
 			if err := s.routeAndPersist(env); err != nil {
-				log.Printf("❌ routeAndPersist 失败: %v", err)
+				slog.Error("route_and_persist_failed", "err", err)
 			}
 
 		}
@@ -153,7 +153,7 @@ func (s *Server) ForwardCallSignal(from string, req ChatMessageRequest) {
 	}
 
 	raw, _ := json.Marshal(sig)
-	log.Printf("📡 ForwardCallSignal from=%s to=%s action=%s", from, req.ReceiveId, req.Action)
+	slog.Info("call_signal_forward", "from", from, "to", req.ReceiveId, "action", req.Action)
 
 	// 发给对方
 	s.DeliverToUser(req.ReceiveId, raw)
@@ -340,12 +340,12 @@ func (s *Server) deliverToUser(userId string, raw []byte) {
 	if !ok || len(conns) == 0 {
 		return
 	}
-	log.Printf("🚀 deliverToUser -> %s (%d 个连接)", userId, len(conns))
+	slog.Debug("deliver_to_user", "user_id", userId, "conn_count", len(conns))
 	for _, c := range conns {
 		select {
 		case c.SendBack <- raw:
 		default:
-			log.Printf("用户 %s 某个连接下行拥堵，消息丢弃", userId)
+			slog.Warn("deliver_dropped", "user_id", userId)
 		}
 	}
 }
@@ -464,8 +464,7 @@ func (s *Server) AddClient(c *Client) {
 
 	// 追加连接（不覆盖）
 	s.Clients[c.Uuid] = append(s.Clients[c.Uuid], c)
-	log.Printf("✅ 用户 %s 登录，当前总连接数 %d（该用户 %d 个端）",
-		c.Uuid, totalConnections(s.Clients), len(s.Clients[c.Uuid]))
+	slog.Info("ws_connect", "user_id", c.Uuid, "total_conns", totalConnections(s.Clients), "user_conns", len(s.Clients[c.Uuid]))
 
 	// 发送在线用户列表给新客户端（仅包括其他用户，不含自己）
 	onlineMsg, _ := json.Marshal(map[string]interface{}{
@@ -547,7 +546,7 @@ func (s *Server) RemoveClient(c *Client) {
 
 	if len(newConns) == 0 {
 		delete(s.Clients, userId)
-		log.Printf("❎ 用户 %s 所有连接已断开，从在线列表移除", userId)
+		slog.Info("ws_all_disconnected", "user_id", userId)
 		s.removeUserFromAllGroups(userId)
 
 		// 广播 user_offline（只有最后一个连接断开时才广播）
@@ -565,7 +564,7 @@ func (s *Server) RemoveClient(c *Client) {
 		}
 	} else {
 		s.Clients[userId] = newConns
-		log.Printf("❎ 用户 %s 断开一个连接，剩余 %d 个", userId, len(newConns))
+		slog.Info("ws_disconnect_partial", "user_id", userId, "remaining_conns", len(newConns))
 	}
 
 	_ = c.Conn.Close()
@@ -582,7 +581,7 @@ func (s *Server) RemoveAllClients(userId string) {
 		}
 		delete(s.Clients, userId)
 		s.removeUserFromAllGroups(userId)
-		log.Printf("❎ 强制移除用户 %s 所有连接", userId)
+		slog.Info("ws_force_removed", "user_id", userId)
 	}
 
 	// 广播离线
@@ -608,10 +607,10 @@ func (s *Server) DeliverToUser(userId string, raw []byte) {
 
 	conns, ok := s.Clients[userId]
 	if !ok || len(conns) == 0 {
-		log.Printf("🔕 DeliverToUser: 用户 %s 不在线", userId)
+		slog.Debug("deliver_user_offline", "user_id", userId)
 		return
 	}
-	log.Printf("🚀 DeliverToUser -> %s (%d 个连接)", userId, len(conns))
+	slog.Debug("deliver_to_user", "user_id", userId, "conn_count", len(conns))
 
 	for _, c := range conns {
 		select {

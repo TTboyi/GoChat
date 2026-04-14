@@ -1,15 +1,27 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { getToken } from "./utils/session";
 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import CaptchaLogin from "./pages/CaptchaLogin";
 import Chat from "./pages/Chat";
 import Profile from "./pages/Profile";
+import Admin from "./pages/Admin";
 
-// App 只关心“路由层面的页面切换”。
+// AdminRoute 在 ProtectedRoute 基础上额外校验 is_admin 标志。
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const token = getToken();
+  const { user } = useAuth();
+  if (!token) return <Navigate to="/" replace />;
+  // user 未加载完时先放行（避免闪屏跳转），加载后再校验
+  if (user && !user.is_admin) return <Navigate to="/chat" replace />;
+  return <>{children}</>;
+};
+
+// App 只关心"路由层面的页面切换"。
 // 真正的业务逻辑会继续下沉到各个 page / component / hook 中。
 function App() {
   return (
@@ -36,6 +48,16 @@ function App() {
                 <ProtectedRoute>
                   <Profile />
                 </ProtectedRoute>
+              }
+            />
+
+            {/* 管理员专属页面 */}
+            <Route
+              path="/admin"
+              element={
+                <AdminRoute>
+                  <Admin />
+                </AdminRoute>
               }
             />
           </Routes>

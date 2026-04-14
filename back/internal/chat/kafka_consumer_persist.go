@@ -3,7 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"time"
 
 	"chatapp/back/internal/config"
@@ -22,14 +22,14 @@ func StartPersistConsumer(brokers []string, group, topic string) {
 		for {
 			client, err := sarama.NewConsumerGroup(brokers, group, cfg)
 			if err != nil {
-				log.Printf("❌ Persist consumer create failed: %v", err)
+				slog.Error("kafka_consumer_create_failed", "group", group, "err", err)
 				time.Sleep(3 * time.Second)
 				continue
 			}
 			err = client.Consume(context.Background(), []string{topic}, &PersistConsumer{})
 			client.Close()
 			if err != nil {
-				log.Printf("❌ Persist consume error: %v", err)
+				slog.Error("kafka_consume_error", "group", group, "err", err)
 				time.Sleep(3 * time.Second)
 			}
 		}
@@ -49,12 +49,12 @@ func (c *PersistConsumer) ConsumeClaim(
 	for msg := range claim.Messages() {
 		var km KafkaMessage
 		if err := json.Unmarshal(msg.Value, &km); err != nil {
-			log.Printf("❌ Persist decode failed: %v", err)
+			slog.Error("kafka_decode_failed", "consumer", "persist", "err", err)
 			continue
 		}
 
 		if err := persistMessage(db, &km); err != nil {
-			log.Printf("❌ Persist failed msgId=%s err=%v", km.MsgId, err)
+			slog.Error("kafka_persist_failed", "msg_id", km.MsgId, "err", err)
 			// ❗不 Mark，让 Kafka 重试
 			continue
 		}
