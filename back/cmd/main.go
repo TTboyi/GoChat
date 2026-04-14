@@ -7,6 +7,7 @@ import (
 	"chatapp/back/internal/chat"
 	"chatapp/back/internal/config"
 	"chatapp/back/internal/router"
+	"chatapp/back/internal/service"
 	"chatapp/back/utils"
 	//"chatapp/back/internal/middleware" // 替换成你项目中间件的真实路径
 	//"github.com/gin-gonic/gin"
@@ -32,6 +33,10 @@ func main() {
 	utils.InitLogger(logCfg.LogPath, logCfg.MaxSizeMB, logCfg.MaxAgeDays, logCfg.MaxBackups)
 
 	config.InitDB()
+
+	// 2b) 自动创建/同步管理员账号（占位符配置下跳过，VPS 部署后生效）
+	adminCfg := config.GetConfig().AdminConfig
+	service.SeedAdminUser(config.GetDB(), adminCfg.Username, adminCfg.Password)
 
 	// 2) 初始化全局 JWT：HTTP 鉴权、刷新 token、WebSocket 握手都会复用它。
 	// 密钥从配置文件读取，不再硬编码。

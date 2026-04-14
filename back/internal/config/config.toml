@@ -51,6 +51,12 @@ smtp_port = 465
 username = "your-email@gmail.com"
 password = "your-smtp-authorization-code"
 
+[adminConfig]
+# 管理员账号，部署时由脚本替换；本地留占位符则跳过自动创建
+username = "ADMIN_USERNAME_PLACEHOLDER"
+# 管理员密码（明文，启动时自动 bcrypt 哈希存储），部署时由脚本替换
+password = "ADMIN_PASSWORD_PLACEHOLDER"
+
 [securityConfig]
 # 允许跨域的前端来源列表，多个用逗号分隔
 # 留空则退回 * (开发模式)；生产部署时由脚本替换为实际域名，如 ["https://www.example.com"]

@@ -83,6 +83,15 @@ type Email struct {
 	Password string `toml:"password"`
 }
 
+// AdminConfig 描述启动时自动创建/更新的管理员账号。
+// 占位符（含 PLACEHOLDER 字样）时跳过，只在 VPS 部署后生效。
+type AdminConfig struct {
+	// Username 管理员昵称，也作为登录账号。
+	Username string `toml:"username"`
+	// Password 管理员明文密码，启动时自动 bcrypt 哈希后存储。
+	Password string `toml:"password"`
+}
+
 // SecurityConfig 集中管理安全敏感配置，避免硬编码。
 type SecurityConfig struct {
 	// AllowedOrigins 是允许跨域访问的前端来源列表（CORS 和 WS CheckOrigin 共用）。
@@ -108,6 +117,7 @@ type Config struct {
 	KafkaConfig     `toml:"kafkaConfig"`
 	StaticSrcConfig `toml:"staticSrcConfig"`
 	Email           `toml:"email"`
+	AdminConfig     `toml:"adminConfig"`
 	SecurityConfig  `toml:"securityConfig"`
 }
 
