@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -32,9 +33,13 @@ func SeedAdminUser(db *gorm.DB, username, password string) {
 
 	var user model.UserInfo
 	err = db.Where("nickname = ?", username).First(&user).Error
-	if err == gorm.ErrRecordNotFound {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// 账号不存在，新建管理员
+		// 截取前20位保证与 char(20) 列类型一致
 		raw := strings.ReplaceAll(uuid.NewString(), "-", "")
+		if len(raw) > 20 {
+			raw = raw[:20]
+		}
 		newUser := model.UserInfo{
 			Uuid:      raw,
 			Nickname:  username,
