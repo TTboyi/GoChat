@@ -190,9 +190,15 @@ func QuitGroup(c *gin.Context) {
 
 // 查询群聊成员列表
 func GetGroupMemberList(c *gin.Context) {
+	userId := c.GetString("userId")
 	groupUuid := c.Query("groupUuid")
 	if groupUuid == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少群组UUID"})
+		return
+	}
+
+	if !service.IsGroupMember(userId, groupUuid) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权限查看该群成员"})
 		return
 	}
 
@@ -270,6 +276,7 @@ func DismissGroupHandler(c *gin.Context) {
 
 // 获取群详情
 func GetGroupInfo(c *gin.Context) {
+	userId := c.GetString("userId")
 	groupId := c.Query("groupId")
 	db := config.GetDB()
 
@@ -279,9 +286,21 @@ func GetGroupInfo(c *gin.Context) {
 		return
 	}
 
-	// 反序列化成员
+	// 反序列化成员列表，同时做鉴权
 	var members []string
 	_ = json.Unmarshal(group.Members, &members)
+
+	isMember := false
+	for _, m := range members {
+		if m == userId {
+			isMember = true
+			break
+		}
+	}
+	if !isMember {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权限查看该群详情"})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"uuid":        group.Uuid,

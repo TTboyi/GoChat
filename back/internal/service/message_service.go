@@ -33,7 +33,12 @@ func GetMessageList(userId, targetId string, limit int, beforeTime int64) ([]mod
 }
 
 // GetGroupMessageList 获取群聊历史消息，分页逻辑与私聊保持一致。
-func GetGroupMessageList(groupId string, limit int, beforeTime int64) ([]model.Message, error) {
+// 调用前会校验 userId 是否是该群成员，防止越权读取不属于自己的群消息。
+func GetGroupMessageList(userId, groupId string, limit int, beforeTime int64) ([]model.Message, error) {
+	if !IsGroupMember(userId, groupId) {
+		return nil, errors.New("无权限访问该群消息")
+	}
+
 	db := config.GetDB()
 	var list []model.Message
 

@@ -231,12 +231,27 @@ func GetMyJoinedGroups(userId string) ([]model.GroupInfo, error) {
 	return groups, err
 }
 
+// ContactPublicInfo 是对外暴露的用户信息，去掉密码、权限、状态等敏感字段。
+type ContactPublicInfo struct {
+	Uuid      string `json:"uuid"`
+	Nickname  string `json:"nickname"`
+	Avatar    string `json:"avatar"`
+	Gender    int8   `json:"gender"`
+	Signature string `json:"signature"`
+}
+
 func GetContactInfo(targetId string) (interface{}, error) {
 	db := config.GetDB()
 
 	var user model.UserInfo
 	if err := db.Where("uuid = ?", targetId).First(&user).Error; err == nil {
-		return user, nil
+		return ContactPublicInfo{
+			Uuid:      user.Uuid,
+			Nickname:  user.Nickname,
+			Avatar:    user.Avatar,
+			Gender:    user.Gender,
+			Signature: user.Signature,
+		}, nil
 	}
 
 	var group model.GroupInfo

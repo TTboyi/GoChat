@@ -34,14 +34,19 @@ func GetMessageList(c *gin.Context) {
 
 // 获取群聊消息
 func GetGroupMessageList(c *gin.Context) {
+	userId := c.GetString("userId")
 	var form req.GetGroupMessageListRequest
 	if err := c.ShouldBindJSON(&form); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
-	messages, err := service.GetGroupMessageList(form.GroupId, form.Limit, form.BeforeTime)
+	messages, err := service.GetGroupMessageList(userId, form.GroupId, form.Limit, form.BeforeTime)
 	if err != nil {
+		if err.Error() == "无权限访问该群消息" {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取失败"})
 		return
 	}

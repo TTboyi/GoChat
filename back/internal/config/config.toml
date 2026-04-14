@@ -39,9 +39,19 @@ staticAvatarPath = "./static/avatars"
 staticFilePath = "./static/files"
 
 [email]
-smtp_host = "smtp.gmail.com"      # 例如163邮箱
-smtp_port = 465                 # SSL端口，一般是465
-username = "lxt52307693@gmail.com" # 你的邮箱
-password = "wikv bssx khit urak"  # 邮箱的授权码（不是登录密码）
+smtp_host = "smtp.gmail.com"
+smtp_port = 465
+username = "your-email@gmail.com"
+password = "your-smtp-authorization-code"
+
+[securityConfig]
+# 允许跨域的前端来源列表，多个用逗号分隔
+allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+# JWT 签名密钥，部署前请替换为随机强密钥
+jwtSecret = "change-this-to-a-random-strong-secret-before-deploy"
+jwtIssuer = "chatapp"
+# TURN 服务器（WebRTC 中继），留空则不提供 TURN 凭证
+turnServer = "your-turn-server:3478"
+turnSecret = "your-turn-static-auth-secret"
 
 

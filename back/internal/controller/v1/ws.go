@@ -17,13 +17,29 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const turnTTL = 24 * time.Hour
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  2048,
 	WriteBufferSize: 2048,
 	CheckOrigin: func(r *http.Request) bool {
-		// 这里为了开发方便直接放行所有来源。
-		// 真正部署时通常要收紧到可信前端域名，否则任何站点都能尝试建立 WS 连接。
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			// 非浏览器客户端（如 curl/postman），开发环境允许放行
+			return true
+		}
+		allowedOrigins := config.GetConfig().SecurityConfig.AllowedOrigins
+		// 未配置时退回到全放行（开发友好）
+		if len(allowedOrigins) == 0 {
+			return true
+		}
+		for _, o := range allowedOrigins {
+			if o == origin {
+				return true
+			}
+		}
+		log.Printf("⚠️ WS 连接被拒绝：来源 %q 不在白名单中", origin)
+		return false
 	},
 }
 
@@ -99,16 +115,7 @@ func WsLogout(c *gin.Context) {
 // 标准：https://datatracker.ietf.org/doc/html/draft-uberti-behave-turn-rest
 // ============================================================
 
-// TURN 服务器配置（从环境变量或配置文件读取，不硬编码敏感信息）
-const (
-	turnServer = "209.54.106.103:3478"
-	turnSecret = "gochat_turn_secret_2024" // coturn 配置的 static-auth-secret
-	turnTTL    = 24 * time.Hour            // 凭证有效期 24 小时
-)
-
 // GetTurnCredentials 返回 TURN 服务器的时效性动态凭证。
-// WebRTC 在复杂网络环境下需要 TURN 中继；这个接口的作用就是在用户真正发起通话前，
-// 临时生成一组可用但会过期的凭证，而不是把长期密钥直接暴露给前端。
 func GetTurnCredentials(c *gin.Context) {
 	userId := c.GetString("userId")
 	if userId == "" {
@@ -116,12 +123,17 @@ func GetTurnCredentials(c *gin.Context) {
 		return
 	}
 
-	// 1. 生成 username = 过期时间戳:userId。
-	//    这种格式是 TURN REST API 的常见约定，服务端可据此判断凭证是否过期。
+	secCfg := config.GetConfig().SecurityConfig
+	turnServer := secCfg.TURNServer
+	turnSecret := secCfg.TURNSecret
+	if turnServer == "" || turnSecret == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "TURN 服务未配置"})
+		return
+	}
+
 	expiry := time.Now().Add(turnTTL).Unix()
 	username := fmt.Sprintf("%d:%s", expiry, userId)
 
-	// 2. 用 static-auth-secret 做 HMAC，得到与 username 绑定的短期密码。
 	mac := hmac.New(sha1.New, []byte(turnSecret))
 	mac.Write([]byte(username))
 	password := base64.StdEncoding.EncodeToString(mac.Sum(nil))

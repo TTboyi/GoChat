@@ -304,6 +304,26 @@ func GetGroupInfo(groupUuid string) (*model.GroupInfo, error) {
 	return &group, nil
 }
 
+// IsGroupMember 检查 userId 是否是 groupUuid 的成员。
+// 用于在查询群消息、群详情、群成员列表前做权限校验。
+func IsGroupMember(userId, groupUuid string) bool {
+	db := config.GetDB()
+	var group model.GroupInfo
+	if err := db.Select("members").Where("uuid = ?", groupUuid).First(&group).Error; err != nil {
+		return false
+	}
+	var members []string
+	if err := json.Unmarshal(group.Members, &members); err != nil {
+		return false
+	}
+	for _, m := range members {
+		if m == userId {
+			return true
+		}
+	}
+	return false
+}
+
 // 更新公告
 func UpdateGroupNotice(userId, groupUuid, notice string) error {
 	db := config.GetDB()

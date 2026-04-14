@@ -11,7 +11,7 @@ import (
 // 因此在阅读 controller/service 时会频繁见到它。
 type UserInfo struct {
 	Id        int64          `gorm:"column:id;primaryKey;comment:自增id"`
-	Uuid      string         `gorm:"column:uuid;uniqueIndex;type:char(8);not null;comment:用户唯一id"`
+	Uuid      string         `gorm:"column:uuid;uniqueIndex;type:char(20);not null;comment:用户唯一id"`
 	Nickname  string         `gorm:"column:nickname;type:varchar(20);not null;comment:昵称"`
 	Telephone string         `gorm:"column:telephone;index;not null;type:char(11);comment:电话"`
 	Email     string         `gorm:"column:email;type:char(30);comment:邮箱"`

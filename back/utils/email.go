@@ -25,7 +25,7 @@ func SendEmail(to, subject, body string) error {
 		"Content-Type: text/plain; charset=UTF-8\r\n\r\n" +
 		body + "\r\n"
 
-	tlsConfig := &tls.Config{InsecureSkipVerify: true, ServerName: c.SmtpHost}
+	tlsConfig := &tls.Config{InsecureSkipVerify: false, ServerName: c.SmtpHost}
 	conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", c.SmtpHost, c.SmtpPort), tlsConfig)
 	if err != nil {
 		return err

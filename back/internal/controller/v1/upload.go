@@ -2,8 +2,10 @@ package v1
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,23 +16,68 @@ import (
 	"github.com/google/uuid"
 )
 
+// allowedImageMIME 是图片类上传允许的 MIME 类型白名单。
+var allowedImageMIME = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/gif":  true,
+	"image/webp": true,
+}
+
+// allowedAvatarExt 头像允许的扩展名（与 MIME 校验双重保障）。
+var allowedAvatarExt = map[string]bool{".jpg": true, ".jpeg": true, ".png": true}
+
+// allowedImageExt 图片允许的扩展名。
+var allowedImageExt = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
+
+// sanitizeFilename 去掉文件名中的路径分隔符和其他危险字符，只保留安全字符。
+func sanitizeFilename(name string) string {
+	name = filepath.Base(name) // 防止路径穿越
+	// 只允许字母、数字、下划线、连字符、点
+	re := regexp.MustCompile(`[^\w.\-]`)
+	name = re.ReplaceAllString(name, "_")
+	// 防止以点开头（隐藏文件）
+	if strings.HasPrefix(name, ".") {
+		name = "_" + name
+	}
+	return name
+}
+
+// sniffMIME 从文件头部字节嗅探真实 MIME 类型，不依赖客户端声明。
+func sniffMIME(f interface{ Read([]byte) (int, error) }) string {
+	buf := make([]byte, 512)
+	n, _ := f.Read(buf)
+	return http.DetectContentType(buf[:n])
+}
+
 // 上传头像
 func UploadAvatar(c *gin.Context) {
-	userId := c.GetString("userId") // JWT 注入的用户ID
+	userId := c.GetString("userId")
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "文件上传失败"})
 		return
 	}
 
-	// 检查文件扩展名
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" {
+	if !allowedAvatarExt[ext] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "头像格式只支持 jpg/jpeg/png"})
 		return
 	}
 
-	// 新文件名: avatar_<userId>.ext
+	// MIME 嗅探
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无法读取文件"})
+		return
+	}
+	defer src.Close()
+	mimeType := sniffMIME(src)
+	if !allowedImageMIME[strings.Split(mimeType, ";")[0]] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "文件内容不是有效图片"})
+		return
+	}
+
 	newFileName := fmt.Sprintf("avatar_%s%s", userId, ext)
 	savePath := filepath.Join(config.GetConfig().StaticAvatarPath, newFileName)
 
@@ -39,10 +86,8 @@ func UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	// 生成可访问 URL
 	avatarURL := fmt.Sprintf("/static/avatars/%s", newFileName)
 
-	// ✅ 更新数据库 user_info.avatar 字段
 	db := config.GetDB()
 	if err := db.Model(&model.UserInfo{}).
 		Where("uuid = ?", userId).
@@ -51,10 +96,7 @@ func UploadAvatar(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "上传成功",
-		"url":     avatarURL,
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "上传成功", "url": avatarURL})
 }
 
 // 上传图片（用于群头像等，不更新用户信息）
@@ -66,9 +108,20 @@ func UploadImage(c *gin.Context) {
 	}
 
 	ext := strings.ToLower(filepath.Ext(file.Filename))
-	allowed := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
-	if !allowed[ext] {
+	if !allowedImageExt[ext] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "图片格式只支持 jpg/jpeg/png/gif/webp"})
+		return
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无法读取文件"})
+		return
+	}
+	defer src.Close()
+	mimeType := sniffMIME(src)
+	if !allowedImageMIME[strings.Split(mimeType, ";")[0]] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "文件内容不是有效图片"})
 		return
 	}
 
@@ -98,14 +151,41 @@ func UploadFile(c *gin.Context) {
 		return
 	}
 
-	// ✅ 30MB 大小限制
 	if file.Size > maxFileSize {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "文件大小不能超过 30MB"})
 		return
 	}
 
-	// 保留原始扩展名，文件名中包含上传时间戳（用于过期计算）
-	ext := filepath.Ext(file.Filename)
+	// 清洗原始文件名，防止路径穿越和特殊字符注入
+	safeOrigName := sanitizeFilename(file.Filename)
+	ext := strings.ToLower(filepath.Ext(safeOrigName))
+
+	// 拒绝可执行文件类型
+	blockedExt := map[string]bool{
+		".exe": true, ".sh": true, ".bat": true, ".cmd": true,
+		".php": true, ".py": true, ".js": true, ".html": true,
+		".htm": true, ".jsp": true, ".asp": true, ".aspx": true,
+	}
+	if blockedExt[ext] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不允许上传该类型文件"})
+		return
+	}
+
+	// MIME 嗅探：若文件头声明为文本/脚本类型则拒绝
+	src, err := file.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无法读取文件"})
+		return
+	}
+	buf := make([]byte, 512)
+	n, _ := io.ReadFull(src, buf)
+	src.Close()
+	detectedMIME := http.DetectContentType(buf[:n])
+	if strings.Contains(detectedMIME, "text/html") || strings.Contains(detectedMIME, "text/xml") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "文件内容类型不被允许"})
+		return
+	}
+
 	newFileName := fmt.Sprintf("file_%s_%d%s", userId, time.Now().Unix(), ext)
 	savePath := filepath.Join(config.GetConfig().StaticFilePath, newFileName)
 
@@ -115,8 +195,5 @@ func UploadFile(c *gin.Context) {
 	}
 
 	fileURL := fmt.Sprintf("/static/files/%s", newFileName)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "上传成功",
-		"url":     fileURL,
-	})
+	c.JSON(http.StatusOK, gin.H{"message": "上传成功", "url": fileURL})
 }

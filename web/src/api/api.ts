@@ -101,7 +101,10 @@ export default {
 
   refreshToken: () => api.post("/auth/refresh"),
 
-  logout: () => api.post("/auth/logout"),
+  logout: () => {
+    const token = getToken();
+    return api.post("/auth/logout", { access: token });
+  },
 
   // ================= 邮箱验证码登录 =================
   sendEmailCaptcha: (data: { email: string }) =>

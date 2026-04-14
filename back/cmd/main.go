@@ -29,7 +29,17 @@ func main() {
 	config.InitDB()
 
 	// 2) 初始化全局 JWT：HTTP 鉴权、刷新 token、WebSocket 握手都会复用它。
-	utils.InitJWT("chatapp-secret", "chatapp", 60, 1440)
+	// 密钥从配置文件读取，不再硬编码。
+	secCfg := config.GetConfig().SecurityConfig
+	jwtSecret := secCfg.JWTSecret
+	if jwtSecret == "" {
+		log.Fatal("securityConfig.jwtSecret 未配置，拒绝启动")
+	}
+	jwtIssuer := secCfg.JWTIssuer
+	if jwtIssuer == "" {
+		jwtIssuer = "chatapp"
+	}
+	utils.InitJWT(jwtSecret, jwtIssuer, 60, 1440)
 	log.Println("JWT初始化成功")
 
 	// 3) 初始化 Redis：主要用于 token 黑名单、验证码、缓存等场景。
@@ -41,36 +51,24 @@ func main() {
 	)
 
 	// 4) 启动 Kafka 生产者和三个消费者。
-	//    这里体现了项目的消息主链路：WebSocket 收到消息后先写入 Kafka，
-	//    再由不同消费者分别负责“实时分发 / 持久化 / 缓存更新”。
-	err := chat.InitKafkaProducer(
-		[]string{"127.0.0.1:9092"},
-		"chat.message",
-	)
+	//    broker 和 topic 从配置文件读取，避免硬编码。
+	kafkaCfg := cfg.KafkaConfig
+	kafkaBrokers := []string{kafkaCfg.HostPort}
+	kafkaTopic := kafkaCfg.ChatTopic
 
-	chat.StartDispatcherConsumer(
-		[]string{"127.0.0.1:9092"},
-		"chat-dispatcher-debug-1",
-		"chat.message",
-	)
+	err := chat.InitKafkaProducer(kafkaBrokers, kafkaTopic)
+
+	chat.StartDispatcherConsumer(kafkaBrokers, "chat-dispatcher-debug-1", kafkaTopic)
 
 	if err != nil {
 		log.Fatalf("Kafka init failed: %v", err)
 	}
 
 	// Persist Consumer：把消息真正写入 MySQL，保证历史消息可追溯。
-	chat.StartPersistConsumer(
-		[]string{"127.0.0.1:9092"},
-		"chat-persist-debug-1",
-		"chat.message",
-	)
+	chat.StartPersistConsumer(kafkaBrokers, "chat-persist-debug-1", kafkaTopic)
 
 	// Cache Consumer：把部分会话/消息状态同步到缓存层，提高读取效率。
-	chat.StartCacheConsumer(
-		[]string{"127.0.0.1:9092"},
-		"chat-cache-debug-1",
-		"chat.message",
-	)
+	chat.StartCacheConsumer(kafkaBrokers, "chat-cache-debug-1", kafkaTopic)
 
 	// 5) 旧版内存 Hub 的 Run 循环目前没有显式启动，
 	//    因为当前主链路已经改成“Client -> Kafka -> Consumers”。

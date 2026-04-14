@@ -70,10 +70,24 @@ type StaticSrcConfig struct {
 
 // Email 用于邮箱验证码登录流程。
 type Email struct {
-	SmtpHost string `toml:"smtp_host"` // 对应 smtp_host = "..."
-	SmtpPort int    `toml:"smtp_port"` // 对应 smtp_port = 465
-	Username string `toml:"username"`  // 对应 username = "..."
-	Password string `toml:"password"`  // 对应 password = "..."
+	SmtpHost string `toml:"smtp_host"`
+	SmtpPort int    `toml:"smtp_port"`
+	Username string `toml:"username"`
+	Password string `toml:"password"`
+}
+
+// SecurityConfig 集中管理安全敏感配置，避免硬编码。
+type SecurityConfig struct {
+	// AllowedOrigins 是允许跨域访问的前端来源列表（CORS 和 WS CheckOrigin 共用）。
+	AllowedOrigins []string `toml:"allowedOrigins"`
+	// JWTSecret 是 HMAC 签名密钥，生产环境必须替换为随机强密钥。
+	JWTSecret string `toml:"jwtSecret"`
+	// JWTIssuer 是 token 颁发方标识。
+	JWTIssuer string `toml:"jwtIssuer"`
+	// TURNServer 是 TURN 中继服务器地址（host:port）。
+	TURNServer string `toml:"turnServer"`
+	// TURNSecret 是 coturn 的 static-auth-secret。
+	TURNSecret string `toml:"turnSecret"`
 }
 
 // Config 是整个配置文件的聚合根。
@@ -87,6 +101,7 @@ type Config struct {
 	KafkaConfig     `toml:"kafkaConfig"`
 	StaticSrcConfig `toml:"staticSrcConfig"`
 	Email           `toml:"email"`
+	SecurityConfig  `toml:"securityConfig"`
 }
 
 var config *Config = new(Config)
