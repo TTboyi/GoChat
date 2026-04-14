@@ -46,7 +46,8 @@ password = "your-smtp-authorization-code"
 
 [securityConfig]
 # 允许跨域的前端来源列表，多个用逗号分隔
-allowedOrigins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+# 留空则退回 * (开发模式)；生产部署时由脚本替换为实际域名，如 ["https://www.example.com"]
+allowedOrigins = []
 # JWT 签名密钥，部署前请替换为随机强密钥
 jwtSecret = "change-this-to-a-random-strong-secret-before-deploy"
 jwtIssuer = "chatapp"
