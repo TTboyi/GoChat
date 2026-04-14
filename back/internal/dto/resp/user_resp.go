@@ -8,5 +8,5 @@ type UserInfoResponse struct {
 	Email     string `json:"email"`
 	Avatar    string `json:"avatar"`
 	Signature string `json:"signature"`
-	IsAdmin   int8   `json:"isAdmin"`
+	IsAdmin   int8   `json:"is_admin"`
 }
