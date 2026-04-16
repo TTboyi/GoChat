@@ -1,3 +1,22 @@
+// ============================================================
+// 文件：web/src/App.tsx
+// 作用：前端路由配置的"总入口"，负责把 URL 路径映射到对应页面组件。
+//
+// React Router 核心概念：
+//   BrowserRouter：使用 HTML5 History API（history.pushState）管理 URL，
+//     用户感觉在浏览不同"页面"，但实际上没有真正刷新（单页应用 SPA）。
+//   Routes / Route：声明式路由表，匹配当前 URL 并渲染对应组件。
+//   Navigate：编程式跳转（相当于"强制重定向"）。
+//
+// AuthProvider 包裹：
+//   把 AuthProvider 放在 Router 内部，使得路由钩子（useNavigate 等）
+//   在 AuthProvider 内部也可以使用。
+//
+// 路由分类：
+//   公开路由（/、/register、/captcha-login）：无需登录即可访问
+//   受保护路由（/chat、/profile）：通过 ProtectedRoute 检查 token
+//   管理员路由（/admin）：通过 AdminRoute 额外检查 is_admin 标志
+// ============================================================
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";

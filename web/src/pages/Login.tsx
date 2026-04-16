@@ -1,3 +1,8 @@
+// ============================================================
+// 文件：web/src/pages/Login.tsx
+// 作用：密码登录页面。
+//       输入用户名和密码，调用 AuthContext.login()，成功后跳转 /chat。
+// ============================================================
 import React from "react";
 import { useForm } from "react-hook-form";
 import { Link } from 'react-router-dom';

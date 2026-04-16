@@ -1,3 +1,34 @@
+// ============================================================
+// 文件：back/internal/router/router.go
+// 作用：注册整个后端的所有 HTTP 路由，相当于"接口目录"。
+//
+// Gin 框架简介：
+//   Gin 是 Go 最流行的 HTTP 框架，以高性能和简洁的 API 著称。
+//   路由注册格式：r.POST("/path", handlerFunc)
+//   路由分组：r.Group("/prefix") 让一组路由共享前缀和中间件。
+//
+// 路由分层设计：
+//   公开路由（无需登录）：
+//   - POST /register    → 用户注册
+//   - POST /login       → 账号密码登录
+//   - POST /auth/refresh → 刷新 token
+//   - POST /auth/logout  → 登出
+//   - GET  /wss         → WebSocket 握手（在握手过程中验证 token）
+//   - POST /captcha/*   → 验证码相关
+//
+//   受保护路由（需要 JWT 中间件鉴权）：
+//   - /group/*    → 群聊管理
+//   - /contact/*  → 联系人管理
+//   - /session/*  → 会话列表
+//   - /message/*  → 消息查询和操作
+//   - /turn/*     → WebRTC TURN 凭证
+//   - /admin/*    → 管理员功能（额外需要 AdminOnly 中间件）
+//
+// Static 路由：
+//   r.Static("/static/avatars", "./static/avatars")
+//   前端通过这个路由直接访问服务器上的图片文件，
+//   不需要经过任何 handler，Gin 直接返回文件内容。
+// ============================================================
 package router
 
 import (

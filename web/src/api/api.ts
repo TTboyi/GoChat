@@ -1,3 +1,24 @@
+// ============================================================
+// 文件：web/src/api/api.ts
+// 作用：前端所有 HTTP 接口的"统一网关"。
+//
+// 架构设计：
+//   - 创建一个全局 axios 实例（baseURL = 后端地址，超时 10s）
+//   - 请求拦截器：自动给每个请求带上 Authorization: Bearer <token>
+//   - 响应拦截器：统一处理 401 过期场景（自动刷新 token）
+//   - 导出按业务域划分的接口方法，页面/Hook 直接调用，不接触 axios 细节
+//
+// Token 自动刷新机制（重要！）：
+//   问题：access token 只有 60 分钟有效期，每隔一小时用户就要重新登录。
+//   解决：当接口返回 401 时，自动用 refresh token 换一个新的 access token，
+//         然后重试原始请求，用户无感知。
+//   并发收敛：如果多个请求同时 401，只发一次刷新请求（isRefreshing 标志），
+//             其他请求等待 refreshPromise resolve 后再重试。
+//   这避免了"一下子发出 5 个 /auth/refresh 请求"的情况。
+//
+// session 工具函数（getToken/setToken 等）：
+//   token 存在 sessionStorage（关闭标签页后自动失效，比 localStorage 安全）。
+// ============================================================
 import axios from "axios";
 import { getToken, setToken, clearToken, getRefreshToken, setRefreshToken, clearRefreshToken } from "../utils/session";
 import { API_BASE } from "../config";

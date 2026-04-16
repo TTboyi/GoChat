@@ -1,3 +1,30 @@
+// ============================================================
+// 文件：back/utils/jwt.go
+// 作用：JWT（JSON Web Token）工具封装，提供 token 生成、解析、刷新能力。
+//
+// 什么是 JWT？
+//   JWT 是一种"无状态身份令牌"。登录成功后，服务器给用户颁发一个 JWT，
+//   此后用户每次请求都携带这个 token，服务器通过验证签名来确认身份，
+//   不需要在服务器端保存任何会话状态（对比传统 Session：服务器要存每个用户的登录状态）。
+//
+// JWT 的结构（三段 Base64 用"."拼接）：
+//   header.payload.signature
+//   - header: 算法类型（这里用 HS256 = HMAC-SHA256）
+//   - payload: 携带的数据（userID、过期时间、签发者等）
+//   - signature: 用 secret key 对前两段的签名，防篡改
+//
+// 双 token 设计（access + refresh）：
+//   access token：有效期短（60分钟），每次 API 请求携带，过期需要刷新
+//   refresh token：有效期长（1440分钟=1天），专门用于换取新的 access token
+//   这样设计的好处：
+//   - access token 短有效期，即使泄露，攻击者能用的时间窗口很短
+//   - refresh token 长有效期，用户不需要频繁重新登录
+//
+// 黑名单机制（在 service/auth_service.go 里配合使用）：
+//   JWT 本身无法"撤销"：一旦签发，在过期前都是有效的。
+//   解决方案：登出时把这个 token 放进 Redis 黑名单（设置和 token 相同的过期时间），
+//   中间件在验证 token 时额外检查黑名单，在黑名单里的 token 拒绝访问。
+// ============================================================
 // utils.jwt.go
 package utils
 

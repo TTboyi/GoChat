@@ -1,3 +1,26 @@
+// ============================================================
+// 文件：back/internal/model/message.go
+// 作用：定义消息持久化表的数据库模型，对应 message 表。
+//
+// 字段设计思路（"宽表"设计）：
+//   一张表同时承载文本、文件、通话三种类型的消息：
+//   - type = 0：文本消息，使用 content 字段
+//   - type = 1：文件消息，使用 url / fileName / fileType / fileSize 字段
+//   - type = 2：通话记录，使用 avData 字段
+//   没有用到的字段留空（NULL），这叫"宽表"设计，用一张表覆盖多种场景，
+//   避免了多表联查的复杂性（代价是有些字段会浪费空间）。
+//
+// ReadAt（已读时间）：
+//   指针类型 *time.Time，NULL 表示"未读"，非 NULL 表示"已读，时间是XXX"。
+//   用 NULL 而不是 bool(IsRead) 的好处：可以知道消息是什么时候被读的。
+//
+// 复合索引（idx_session_time）：
+//   gorm:"index:idx_session_time,priority:1"（SessionId 在索引里优先级更高）
+//   gorm:"index:idx_session_time,priority:2"（CreatedAt 是次级排序）
+//   这个复合索引专门为"查某个会话里时间段内的消息"优化：
+//   WHERE session_id = ? AND created_at < ? ORDER BY created_at DESC
+//   有了这个索引，查询不需要全表扫描，直接定位到对应会话的消息范围。
+// ============================================================
 package model
 
 import "time"

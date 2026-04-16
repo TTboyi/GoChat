@@ -1,3 +1,18 @@
+// ============================================================
+// 文件：back/internal/controller/v1/auth.go
+// 作用：处理 token 刷新和登出请求。
+//
+// RefreshToken（刷新 token）：
+//   当 access token 过期（API 返回 401），前端调用这个接口，
+//   用 refresh token 换取一对新的 access + refresh token。
+//   前端在 api.ts 的响应拦截器里自动处理了这个流程（无感刷新）。
+//
+// Logout（登出）：
+//   登出并不是真的"删除 token"（JWT 无法被删除），
+//   而是把这个 token 放进 Redis 黑名单。
+//   之后中间件校验时发现 token 在黑名单里，就拒绝访问。
+//   黑名单 key 的 TTL 等于 token 剩余有效期，到期后 Redis 自动删除，不浪费空间。
+// ============================================================
 package v1
 
 import (

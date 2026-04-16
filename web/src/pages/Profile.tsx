@@ -1,3 +1,14 @@
+// ============================================================
+// 文件：web/src/pages/Profile.tsx
+// 作用：个人资料编辑页面（修改头像、昵称、个性签名、电话）。
+//
+// 头像上传流程：
+//   1. 用户点击头像区域，触发隐藏的 <input type="file"> 弹出文件选择框
+//   2. 选中图片后，通过 FormData 上传到 /message/uploadAvatar
+//   3. 后端返回图片的 URL 路径
+//   4. 前端把 URL 填入表单的 avatar 字段
+//   5. 提交表单时，把包含新 avatar URL 的数据一起发给 /user/update
+// ============================================================
 import React, { useEffect, useState } from "react";
 import api from "../api/api";
 import { API_BASE } from "../config";

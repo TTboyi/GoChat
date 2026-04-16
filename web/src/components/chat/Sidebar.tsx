@@ -1,3 +1,16 @@
+// ============================================================
+// 文件：web/src/components/chat/Sidebar.tsx
+// 作用：左侧边栏组件，包含会话列表、搜索好友/群按钮、新消息通知。
+//
+// 渲染会话列表的逻辑：
+//   props.sessions 是所有会话数组，按最后消息时间倒序排列。
+//   会话头像：私聊用联系人头像，群聊用群头像。
+//   未读计数：显示红色圆形角标，超过 99 显示"99+"。
+//
+// 在线状态显示：
+//   props.onlineUsers（Set<string>）包含所有在线用户 UUID。
+//   私聊对话头像右下角显示绿色小圆点表示在线，灰色表示离线。
+// ============================================================
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { SessionItem } from "../../types/chat";

@@ -1,3 +1,16 @@
+// ============================================================
+// 文件：back/internal/service/contact_apply_service.go
+// 作用：群聊申请（进群申请）的处理逻辑。
+//
+// 与 contact_service.go 的区别：
+//   contact_service.go 处理"好友申请"（用户间的一对一关系）
+//   contact_apply_service.go 处理"入群申请"（用户申请加入某个群）
+//
+// 群聊审核模式（AddMode = 1）：
+//   群主或管理员在这里审核待加入的申请。
+//   通过后，被申请者的 UUID 会被 append 进群的 members JSON 数组，
+//   同时在 user_contact 表创建记录。
+// ============================================================
 package service
 
 import (

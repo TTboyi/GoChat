@@ -1,3 +1,7 @@
+// ============================================================
+// 文件：web/src/components/chat/AddFriendModal.tsx
+// 作用：搜索并添加好友的弹窗（通过邮箱或用户 UUID 搜索，然后发起好友申请）。
+// ============================================================
 import React, { useState } from "react";
 import api from "../../api/api";
 

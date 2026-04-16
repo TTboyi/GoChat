@@ -1,3 +1,15 @@
+// ============================================================
+// 文件：back/internal/controller/v1/admin.go
+// 作用：管理后台的 HTTP handler，所有接口都需要管理员权限（AdminOnly 中间件保护）。
+//
+// 功能列表：
+//   GetAllUsers   - 获取所有用户（支持分页）
+//   BanUser       - 封禁/解封某用户
+//   GetAllGroups  - 获取所有群聊
+//   AdminDismissGroup - 强制解散群聊
+//   GetSystemStats    - 系统概况统计（用户数、群数、消息数）
+//   GetDailyStats     - 每日新增统计（用于趋势图表）
+// ============================================================
 package v1
 
 import (

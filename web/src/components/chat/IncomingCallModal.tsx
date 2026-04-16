@@ -1,3 +1,7 @@
+// ============================================================
+// 文件：web/src/components/chat/IncomingCallModal.tsx
+// 作用：来电提示弹窗（显示来电方名字、通话类型，提供接听/拒绝按钮）。
+// ============================================================
 import React from "react";
 import type { IncomingCall } from "../../hooks/useWebRTC";
 

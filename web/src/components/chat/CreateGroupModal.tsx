@@ -1,3 +1,7 @@
+// ============================================================
+// 文件：web/src/components/chat/CreateGroupModal.tsx
+// 作用：创建群聊的弹窗（填写群名称、选择初始成员、上传群头像）。
+// ============================================================
 import React, { useState, useRef } from "react";
 import api from "../../api/api";
 

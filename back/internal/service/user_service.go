@@ -1,3 +1,26 @@
+// ============================================================
+// 文件：back/internal/service/user_service.go
+// 作用：用户注册、登录、信息查询、信息更新的业务逻辑。
+//
+// 密码安全：
+//   RegisterUser：用 bcrypt.DefaultCost（当前为 10 轮）生成哈希，
+//     同样的密码每次哈希结果不同（因为有随机 salt），无法通过彩虹表攻击。
+//   LoginUser：支持新旧两种密码格式：
+//     - bcrypt 哈希（新注册账号）：用 CompareHashAndPassword 比对
+//     - 明文密码（迁移前的旧账号）：直接字符串比较
+//     旧账号首次登录成功后自动升级为 bcrypt 哈希（"密码迁移"）
+//
+// 用户信息缓存策略（GetUserInfo）：
+//   1. 先查 Redis（key = "user_info_v2:{userId}"，TTL = 15分钟）
+//   2. 缓存命中直接返回，不查数据库
+//   3. 缓存未命中则查 MySQL，写入 Redis 后返回
+//   UpdateUserInfo 更新成功后主动删除 Redis 缓存（Cache-Aside 模式的失效策略），
+//   下次读取时重新从 DB 加载最新数据。
+//
+// FindOrCreateUserByEmail：
+//   邮箱验证码登录场景：如果邮箱从未注册过，自动创建账号。
+//   昵称取邮箱 @ 前面的部分（如 hello@gmail.com → 昵称 hello）。
+// ============================================================
 package service
 
 import (

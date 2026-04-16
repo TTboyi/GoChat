@@ -1,3 +1,7 @@
+// ============================================================
+// 文件：web/src/components/chat/ChatHeader.tsx
+// 作用：聊天窗口顶部栏，显示对方名字/群名，以及功能按钮（音视频通话、查看资料等）。
+// ============================================================
 import React from "react";
 import type { SessionItem } from "../../types/chat";
 import { toAbs } from "../../utils/chatUtils";

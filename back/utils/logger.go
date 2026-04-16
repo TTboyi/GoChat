@@ -1,3 +1,23 @@
+// ============================================================
+// 文件：back/utils/logger.go
+// 作用：初始化全局结构化日志器，支持同时输出到文件（JSON格式）和终端（文本格式）。
+//
+// 什么是结构化日志（slog）？
+//   传统日志：log.Printf("用户 %s 登录失败", userId)
+//             输出："用户 abc123 登录失败"
+//   结构化日志：slog.Info("user_login_failed", "userId", "abc123")
+//               输出：{"time":"...","level":"INFO","msg":"user_login_failed","userId":"abc123"}
+//   结构化日志的好处：日志可以被机器解析、过滤、聚合（用 ELK、Grafana 等日志系统处理）。
+//
+// lumberjack 日志轮转：
+//   当日志文件超过 MaxSize 时，自动重命名为 gochat-2024-01-01.log，
+//   创建新的 gochat.log 继续写入。旧文件超过 MaxAge 天或 MaxBackups 个时自动删除。
+//   这样日志不会把磁盘撑满。
+//
+// MultiWriter（双输出）设计：
+//   文件输出 JSON 格式 → 方便日志系统采集和分析
+//   stdout（终端）输出文本格式 → 方便开发时实时查看
+// ============================================================
 package utils
 
 import (

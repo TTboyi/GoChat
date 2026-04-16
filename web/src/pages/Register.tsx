@@ -1,3 +1,8 @@
+// ============================================================
+// 文件：web/src/pages/Register.tsx
+// 作用：用户注册页面。
+//       填写用户名、邮箱、密码，提交到后端 /auth/register 接口完成注册。
+// ============================================================
 import React from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";

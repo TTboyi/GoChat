@@ -1,3 +1,12 @@
+// ============================================================
+// 文件：back/internal/controller/v1/contact.go
+// 作用：联系人管理相关的 HTTP handler：申请好友、审核申请、删除/拉黑联系人。
+//
+// 申请通过后的 WebSocket 通知：
+//   HandleContactApply 返回申请人 userId 后，controller 会通过 ChatServer.DeliverToUser
+//   给申请人发一条实时通知（{"action":"apply_accepted"}），让对方界面立刻收到"已通过"提示，
+//   而不是等到下次刷新才知道。这是"REST + WS 配合"的典型用法。
+// ============================================================
 package v1
 
 import (

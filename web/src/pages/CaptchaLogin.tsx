@@ -1,3 +1,17 @@
+// ============================================================
+// 文件：web/src/pages/CaptchaLogin.tsx
+// 作用：验证码登录页面（邮箱 + 6 位数字验证码）。
+//
+// 流程：
+//   1. 用户输入邮箱，点"发送验证码"→ 调 /captcha/send_email
+//   2. 后端发邮件，用户从邮箱拿到验证码
+//   3. 用户输入验证码，点"登录"→ 调 /captcha/login_email
+//   4. 验证通过后，后端返回 JWT，前端存入 sessionStorage，跳转 /chat
+//
+// 倒计时逻辑：
+//   发送后按钮变为"X 秒后重发"，防止用户重复点击。
+//   倒计时由 setInterval 每秒递减，到 0 后重新可点击。
+// ============================================================
 import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate } from 'react-router-dom';

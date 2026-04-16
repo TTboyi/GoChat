@@ -1,3 +1,12 @@
+// ============================================================
+// 文件：web/src/components/chat/CallWindow.tsx
+// 作用：通话中的窗口组件（显示本地/远端视频画面，提供挂断按钮）。
+//
+// localVideoRef / remoteVideoRef：
+//   这两个 ref 由 useWebRTC Hook 传入，直接绑定到 <video> 元素。
+//   当 WebRTC 连接建立后，useWebRTC 内部会把 MediaStream 赋值给
+//   videoElement.srcObject，浏览器自动开始播放视频。
+// ============================================================
 import React, { useEffect } from "react";
 import type { RefObject } from "react";
 import type { CallState } from "../../types/chat";

@@ -1,3 +1,7 @@
+// ============================================================
+// 文件：web/src/components/chat/SearchHistoryModal.tsx
+// 作用：搜索当前会话历史消息的弹窗（关键词搜索，高亮匹配结果）。
+// ============================================================
 import React, { useState, useCallback, useRef } from "react";
 import type { Message } from "../../types/chat";
 import { toAbs } from "../../utils/chatUtils";

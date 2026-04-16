@@ -1,3 +1,13 @@
+// ============================================================
+// 文件：web/src/hooks/useAuth.ts
+// 作用：一个独立的认证 Hook（与 AuthContext.tsx 中的 useAuth 并存）。
+//       本文件的 useAuth 主要供 Login 页面使用（不依赖 AuthContext，独立管理状态）。
+//
+// 与 AuthContext 的 useAuth 的区别：
+//   AuthContext.tsx 的 useAuth：消费全局 Context，适合在 Chat 等主界面使用
+//   本文件的 useAuth：独立 Hook，维护自己的 user/loading state
+//   两者逻辑相似，但本文件额外暴露了 setUser（供外部直接更新用户状态）
+// ============================================================
 import { useEffect, useState } from "react";
 import api from "../api/api";
 import { getToken, setToken, clearToken, setRefreshToken, clearRefreshToken } from "../utils/session";

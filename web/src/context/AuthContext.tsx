@@ -1,3 +1,23 @@
+// ============================================================
+// 文件：web/src/context/AuthContext.tsx
+// 作用：全局认证状态的"单一事实来源"（Single Source of Truth）。
+//
+// 什么是 React Context（上下文）？
+//   Props 传递有个问题：如果 A 组件里有用户信息，而 D 组件（孙子辈）需要用，
+//   就得 A→B→C→D 一层层传递（"prop drilling"，钻探问题）。
+//   Context 解决了这个问题：把状态放进"上下文容器"，任何后代组件
+//   都可以直接调用 useContext 取数据，不用关心中间层。
+//
+// AuthProvider / useAuth 的分工：
+//   AuthProvider：包裹在所有页面外层，提供 user、login、logout、refreshUser
+//   useAuth Hook：在任何组件里取出认证状态，一行代码：const { user } = useAuth()
+//
+// 初始化流程（页面刷新时）：
+//   1. 读 sessionStorage 里的 token
+//   2. 如果有，调 /user/info 恢复用户资料（因为内存里的 user 状态在刷新后清空了）
+//   3. 如果失败（token 已失效），清掉本地 token，用户需重新登录
+//   loading 标志防止在用户信息加载完成前就渲染受保护页面（避免闪屏跳转）
+// ============================================================
 import React, { createContext, useContext, useEffect, useState } from "react";
 import api from "../api/api";
 

@@ -109,3 +109,6 @@ secrets/
 
 # Keep frontend production env (contains API base URL, not secrets)
 !/web/.env.production
+
+# 本地架构文档（不上传）
+ARCHITECTURE.md

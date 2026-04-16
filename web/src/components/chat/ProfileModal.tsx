@@ -1,3 +1,7 @@
+// ============================================================
+// 文件：web/src/components/chat/ProfileModal.tsx
+// 作用：查看对方用户资料的弹窗（头像、昵称、邮箱、个性签名，以及加好友/发消息按钮）。
+// ============================================================
 import React, { useState, useEffect } from "react";
 import api from "../../api/api";
 import { toAbs } from "../../utils/chatUtils";

@@ -1,3 +1,7 @@
+// ============================================================
+// 文件：web/src/components/chat/JoinGroupModal.tsx
+// 作用：通过群号（6位数字）搜索并加入群聊的弹窗。
+// ============================================================
 import React, { useState } from "react";
 import api from "../../api/api";
 

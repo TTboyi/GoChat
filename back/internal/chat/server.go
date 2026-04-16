@@ -1,3 +1,39 @@
+// ============================================================
+// 文件：back/internal/chat/server.go
+// 作用：定义"在线用户路由中心"（ChatServer），管理所有 WebSocket 连接，
+//       并负责消息分发、在线状态广播、群聊订阅等核心实时能力。
+//
+// 核心数据结构：
+//   Server.Clients - map[string][]*Client
+//     key:   用户的 UUID（字符串）
+//     value: 该用户当前所有活跃的 WebSocket 连接切片
+//     支持多端同时在线（手机+电脑同时登录）
+//
+//   groupMembers - map[string]map[string]bool
+//     外层 key: 群聊的 UUID
+//     内层 key: 已订阅该群的用户 UUID
+//     内层 value: true（用 bool 作为 Set 的常见 Go 惯用写法）
+//     这是内存中的"群聊在线订阅表"，不是真正的群成员表（那个在数据库里）
+//
+// 在线状态广播机制：
+//   当用户 A 连接时：
+//     1. 把 A 的连接加入 Clients["A的UUID"]
+//     2. 如果是 A 的第一个连接，向所有其他在线用户广播 {"action":"user_online","userId":"A的UUID"}
+//     3. 同时把当前所有在线用户列表发给 A（让 A 的界面立刻显示谁在线）
+//   当用户 A 断开时：
+//     1. 从 Clients["A的UUID"] 里删掉这条连接
+//     2. 如果 A 所有连接都断了，广播 {"action":"user_offline","userId":"A的UUID"}
+//     3. 清除 A 在所有群的订阅记录（groupMembers 里）
+//
+// 为什么消息主链路走 Kafka 而不是直接内存传递？
+//   内存传递（旧方案）：Server → 直接找到目标用户连接 → 写消息
+//     优点：简单快速
+//     缺点：服务重启丢消息、多机部署时找不到连接
+//   Kafka 方案（新主链路）：WebSocket → Kafka 队列 → Consumer → WebSocket
+//     优点：消息不丢失（队列持久化）、天然支持多消费者（持久化、推送、缓存）
+//     缺点：引入了额外的延迟（通常 <10ms，用户感知不到）
+// ============================================================
+
 package chat
 
 import (

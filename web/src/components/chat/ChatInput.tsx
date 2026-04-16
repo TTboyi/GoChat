@@ -1,3 +1,16 @@
+// ============================================================
+// 文件：web/src/components/chat/ChatInput.tsx
+// 作用：消息输入框组件（文字输入 + 文件/图片发送 + 表情）。
+//
+// 发送流程：
+//   1. 用户输入文字 → 按 Enter（非 Shift+Enter）→ 调 onSend 回调
+//   2. 文件选择后 → 先上传到 /message/uploadFile → 拿到 URL → 调 onSendFile
+//   3. 表情选择 → 把表情字符追加到输入框文本
+//
+// Shift+Enter 换行 vs Enter 发送：
+//   keydown 事件里判断：if (e.key === 'Enter' && !e.shiftKey)  → 发送
+//   else if (e.key === 'Enter' && e.shiftKey)  → 正常换行
+// ============================================================
 import React, { useRef } from "react";
 import type { SessionItem } from "../../types/chat";
 

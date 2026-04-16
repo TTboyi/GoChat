@@ -1,3 +1,22 @@
+// ============================================================
+// 文件：web/src/components/chat/ChatMessages.tsx
+// 作用：消息列表区域，渲染所有聊天气泡。
+//
+// 气泡类型渲染策略：
+//   type=0（文字消息）：直接渲染 content 文本
+//   type=1（文件/图片）：渲染文件图标+文件名，图片类型则展示缩略图
+//   type=2（音视频通话记录）：渲染通话时长或"未接来电"样式
+//   撤回消息：显示"消息已撤回"灰色提示
+//
+// 自动滚底（scrollToBottom）：
+//   每次消息列表更新后，滚动条自动跳到最底部（看到最新消息）。
+//   但如果用户向上翻页历史，应该不要强制打断——这里通过判断
+//   是否接近底部来决定是否自动滚动。
+//
+// 已读状态（readStatus）：
+//   消息气泡右下角显示"✓ 已读"或"✓ 未读"。
+//   已读状态来自后端 message.is_read 字段。
+// ============================================================
 import React, { useRef, useEffect, useCallback } from "react";
 import type { RefObject } from "react";
 import type { Message, SessionItem } from "../../types/chat";

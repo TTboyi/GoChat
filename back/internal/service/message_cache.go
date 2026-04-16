@@ -1,3 +1,15 @@
+// ============================================================
+// 文件：back/internal/service/message_cache.go
+// 作用：从 Redis 缓存中读取历史消息（辅助函数）。
+//
+// 函数 getMessageListFromRedis 直接从 Redis List 里读取指定数量的消息。
+// key 格式：im:chat:messages:{userId}:{targetId}
+// 使用 LRANGE 命令从尾部取最近 N 条（负索引表示从尾部算起）。
+//
+// 注意：这个 key 格式与 chat 包里 cacheMessage 使用的
+//       chat:session:msgs:{sessionId} 格式不同，是另一套缓存键，
+//       可能是早期版本遗留或用于特定接口的辅助查询。
+// ============================================================
 // internal/service/message_cache.go
 package service
 

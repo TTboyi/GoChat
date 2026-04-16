@@ -1,3 +1,48 @@
+// ============================================================
+// 文件：web/src/hooks/useWebRTC.ts
+// 作用：封装整个音视频通话的状态机与信令逻辑，是前端最复杂的 Hook。
+//
+// 关键概念介绍：
+//
+// WebRTC（Web Real-Time Communication）：
+//   浏览器内置的点对点音视频通信协议。一旦建立连接，媒体数据在
+//   两端浏览器之间直接流动，不经过服务器（带宽零消耗）。
+//
+// SDP（Session Description Protocol，会话描述协议）：
+//   描述"我支持什么编解码器、分辨率、码率"的文本协议。
+//   Offer = 主叫方发起的 SDP；Answer = 被叫方回应的 SDP。
+//   双方交换 Offer/Answer 后就知道"要用哪种编解码器通话"了。
+//
+// ICE Candidate（网络候选地址）：
+//   因为用户的网络地址可能在 NAT/防火墙后面，WebRTC 通过
+//   STUN 服务发现公网 IP，通过 TURN 服务转发（NAT 穿越失败时）。
+//   每一个"我可以通过这个 IP+端口接收数据"就是一个 ICE Candidate。
+//
+// ICE Candidate 缓冲机制（本 Hook 的关键设计）：
+//   问题：主叫方在 setLocalDescription 之后就立刻开始发 ICE Candidate，
+//         而被叫方可能还没 setRemoteDescription（未知"Offer"是什么），
+//         此时调用 addIceCandidate 会报错。
+//   解决：pendingCandidatesRef 缓冲所有在 remoteDescReadyRef=false 期间
+//         收到的 ICE Candidate，等 setRemoteDescription 完成后批量 flush。
+//
+// RTCPeerConnection 参数选择：
+//   bundlePolicy="max-bundle"：把音频和视频复用同一个传输通道，
+//     减少 ICE 协商次数（只需要找一对地址，而不是两对）。
+//   iceCandidatePoolSize=4：提前预收集候选地址，减少建立连接的等待时间。
+//
+// VP9 优先的原因：
+//   VP9 相比 VP8 在相同码率下画质更好（约省 50% 带宽）。
+//   Chrome 和 Firefox 均支持，通过 setCodecPreferences 重排顺序即可。
+//
+// 码率控制（applyBitrate）：
+//   浏览器默认码率较保守，通过 RTCRtpSender.setParameters 手动设置：
+//   视频 2 Mbps + 音频 128 kbps，在局域网/宽带下能保证较高质量。
+//   必须在连接 connected 后再设置，此时 encodings 才已初始化完毕。
+//
+// callStateRef + callState 双保险：
+//   React state 的更新是异步的，在回调函数里直接读 callState 可能读到旧值。
+//   callStateRef 始终是最新值的同步副本，用于在 WebSocket 回调里做判断。
+// ============================================================
 import { useRef, useState, useCallback, useEffect } from "react";
 import type { RefObject } from "react";
 import type { CallState, SessionItem } from "../types/chat";

@@ -1,3 +1,7 @@
+// ============================================================
+// 文件：web/src/components/chat/GroupInfoModal.tsx
+// 作用：群组详情弹窗（群主可修改群名/公告/头像，所有成员可查看成员列表、退群）。
+// ============================================================
 import React, { useEffect, useState, useRef } from "react";
 import api from "../../api/api";
 import { useAuth } from "../../context/AuthContext";

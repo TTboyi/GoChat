@@ -1,3 +1,18 @@
+// ============================================================
+// 文件：web/src/pages/Admin.tsx
+// 作用：后台管理界面，仅管理员可访问（AdminRoute 守卫）。
+//
+// 功能区域：
+//   - 系统概况卡片（总用户数、总群数、总消息数）
+//   - 趋势图表（每日新增用户 & 消息量，使用 Chart.js 绘制折线图）
+//   - 用户管理表格（查看所有用户、封禁/解封）
+//   - 群聊管理表格（查看所有群聊、强制解散）
+//
+// Chart.js 使用方式：
+//   通过 canvas 元素 + new Chart(canvas, config) 创建图表。
+//   组件销毁时（useEffect 的 cleanup 函数）调用 chart.destroy()，
+//   防止 React 重渲染时出现"canvas 已被占用"的报错。
+// ============================================================
 import React, { useEffect, useState, useCallback } from "react";
 import api from "../api/api";
 import {

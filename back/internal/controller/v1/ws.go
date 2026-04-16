@@ -1,3 +1,28 @@
+// ============================================================
+// 文件：back/internal/controller/v1/ws.go
+// 作用：处理 WebSocket 连接握手、断开，以及为 WebRTC 通话提供 TURN 服务器凭证。
+//
+// WebSocket 握手流程（WsLogin）：
+//   1. 从 URL 查询参数读取 token（?token=xxxxx）
+//      注意：WebSocket 握手是 HTTP GET 请求，不能在 header 里带 Authorization，
+//      所以 token 通过 URL 参数传递。
+//   2. 验证 JWT token 的合法性
+//   3. 检查 Redis 黑名单（是否已登出）
+//   4. 调用 upgrader.Upgrade：把这个 HTTP 连接"升级"成 WebSocket 连接
+//   5. 创建 Client 对象，调用 ChatServer.AddClient 注册到在线用户表
+//   6. 启动读协程（Read）和写协程（Write），维持长连接
+//
+// websocket.Upgrader 的 CheckOrigin 配置：
+//   CheckOrigin 函数决定"哪些来源的 WebSocket 连接请求被允许"。
+//   与 CORSMiddleware 的来源白名单保持一致。
+//   开发环境（allowedOrigins 为空）允许所有来源，生产环境只允许配置的域名。
+//
+// TURN 服务器动态凭证（GetTurnCredentials）：
+//   WebRTC 通话需要两端先"找到对方"（ICE 协商）。
+//   大多数情况下，STUN 服务器（Google 提供的免费公共 STUN）就够用了。
+//   但如果双方都在严格的 NAT 防火墙后面，需要 TURN 中继服务器。
+//   TURN 凭证用 HMAC-SHA1 签名生成，包含过期时间（TTL），防止凭证被盗用。
+// ============================================================
 package v1
 
 import (
