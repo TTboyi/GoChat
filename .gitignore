@@ -60,7 +60,6 @@ vendor/
 # =========================
 # React Frontend (Vite + Tailwind)
 # =========================
-/web/node_modules/
 /web/dist/
 /web/.env
 /web/.env.*
@@ -112,3 +111,9 @@ secrets/
 
 # 本地架构文档（不上传）
 ARCHITECTURE.md
+
+# Tailwind CSS 属性说明文档（本地生成）
+tailwind-doc.md
+
+# 根目录 node_modules（前端依赖装在 web/ 下）
+/node_modules/
